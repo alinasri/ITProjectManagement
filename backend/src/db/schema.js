@@ -86,6 +86,64 @@ db.exec(`
     personnel_id INTEGER NOT NULL REFERENCES personnel(id) ON DELETE CASCADE,
     PRIMARY KEY (task_id, personnel_id)
   );
+
+  CREATE TABLE IF NOT EXISTS purchases (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    title TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'pending'
+      CHECK(status IN ('pending','approved','purchased','delivered','cancelled')),
+    supplier TEXT DEFAULT '',
+    amount TEXT DEFAULT '',
+    purchase_date TEXT DEFAULT '',
+    description TEXT DEFAULT '',
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now'))
+  );
+
+  CREATE TABLE IF NOT EXISTS purchase_sections (
+    purchase_id INTEGER NOT NULL REFERENCES purchases(id) ON DELETE CASCADE,
+    section_id INTEGER NOT NULL REFERENCES sections(id) ON DELETE CASCADE,
+    PRIMARY KEY (purchase_id, section_id)
+  );
+
+  CREATE TABLE IF NOT EXISTS tenders (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    title TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'open'
+      CHECK(status IN ('open','evaluating','awarded','completed','cancelled')),
+    estimated_amount TEXT DEFAULT '',
+    deadline TEXT DEFAULT '',
+    winner TEXT DEFAULT '',
+    description TEXT DEFAULT '',
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now'))
+  );
+
+  CREATE TABLE IF NOT EXISTS tender_sections (
+    tender_id INTEGER NOT NULL REFERENCES tenders(id) ON DELETE CASCADE,
+    section_id INTEGER NOT NULL REFERENCES sections(id) ON DELETE CASCADE,
+    PRIMARY KEY (tender_id, section_id)
+  );
+
+  CREATE TABLE IF NOT EXISTS contracts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    title TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'active'
+      CHECK(status IN ('active','renewed','expired','cancelled')),
+    counterparty TEXT DEFAULT '',
+    start_date TEXT DEFAULT '',
+    end_date TEXT DEFAULT '',
+    amount TEXT DEFAULT '',
+    description TEXT DEFAULT '',
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now'))
+  );
+
+  CREATE TABLE IF NOT EXISTS contract_sections (
+    contract_id INTEGER NOT NULL REFERENCES contracts(id) ON DELETE CASCADE,
+    section_id INTEGER NOT NULL REFERENCES sections(id) ON DELETE CASCADE,
+    PRIMARY KEY (contract_id, section_id)
+  );
 `);
 
 // Migrate single responsible_id columns to many-to-many join tables
@@ -100,6 +158,27 @@ for (const [table, joinTable, fk] of [
              SELECT id, responsible_id FROM ${table} WHERE responsible_id IS NOT NULL`);
     db.exec(`ALTER TABLE ${table} DROP COLUMN responsible_id`);
   }
+}
+
+// Migrate users.role CHECK constraint to allow the new registry-admin roles
+// (SQLite can't ALTER a CHECK constraint in place — recreate the table)
+const usersTableSql = db.prepare(`SELECT sql FROM sqlite_master WHERE type='table' AND name='users'`).get().sql;
+if (!usersTableSql.includes('purchase_admin')) {
+  db.exec(`
+    CREATE TABLE users_new (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      username TEXT UNIQUE NOT NULL,
+      password_hash TEXT NOT NULL,
+      role TEXT NOT NULL CHECK(role IN ('super_admin','it_head','section_head','purchase_admin','tender_admin','contract_admin')),
+      section_id INTEGER REFERENCES sections(id) ON DELETE SET NULL,
+      must_change_password INTEGER DEFAULT 0,
+      created_at TEXT DEFAULT (datetime('now'))
+    );
+    INSERT INTO users_new (id, username, password_hash, role, section_id, must_change_password, created_at)
+      SELECT id, username, password_hash, role, section_id, must_change_password, created_at FROM users;
+    DROP TABLE users;
+    ALTER TABLE users_new RENAME TO users;
+  `);
 }
 
 // Seed initial data only once

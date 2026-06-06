@@ -1,6 +1,6 @@
 import { NavLink, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { LogOut, Monitor, Users, FolderKanban, LayoutDashboard, Shield, ChevronLeft, ListChecks } from 'lucide-react';
+import { LogOut, Monitor, Users, FolderKanban, LayoutDashboard, Shield, ChevronLeft, ListChecks, ShoppingCart, Gavel, FileSignature } from 'lucide-react';
 
 const STATUS_LABELS = {
   not_started: 'شروع نشده',
@@ -22,6 +22,9 @@ export default function Sidebar({ sections = [], activeSectionId }) {
     super_admin: 'مدیر سیستم',
     it_head: 'مدیر IT',
     section_head: 'مسئول بخش',
+    purchase_admin: 'مدیر خرید',
+    tender_admin: 'مدیر مناقصات',
+    contract_admin: 'مدیر قراردادها',
   }[user?.role] || '';
 
   return (
@@ -48,6 +51,12 @@ export default function Sidebar({ sections = [], activeSectionId }) {
             <SidebarLink to="/admin/users" icon={<Users className="w-4 h-4" />} label="مدیریت کاربران" />
             <SidebarLink to="/it-head" icon={<Shield className="w-4 h-4" />} label="نمای مدیر IT" />
             <div className="pt-3 pb-1 px-3">
+              <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">ثبت‌های سازمانی</p>
+            </div>
+            <SidebarLink to="/purchases" icon={<ShoppingCart className="w-4 h-4" />} label="خریدها" />
+            <SidebarLink to="/tenders" icon={<Gavel className="w-4 h-4" />} label="مناقصات" />
+            <SidebarLink to="/contracts" icon={<FileSignature className="w-4 h-4" />} label="قراردادها" />
+            <div className="pt-3 pb-1 px-3">
               <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">بخش‌ها</p>
             </div>
             {sections.map(s => (
@@ -64,6 +73,12 @@ export default function Sidebar({ sections = [], activeSectionId }) {
         {user?.role === 'it_head' && (
           <>
             <SidebarLink to="/it-head" icon={<LayoutDashboard className="w-4 h-4" />} label="داشبورد کلی" />
+            <div className="pt-3 pb-1 px-3">
+              <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">ثبت‌های سازمانی</p>
+            </div>
+            <SidebarLink to="/purchases" icon={<ShoppingCart className="w-4 h-4" />} label="خریدها" />
+            <SidebarLink to="/tenders" icon={<Gavel className="w-4 h-4" />} label="مناقصات" />
+            <SidebarLink to="/contracts" icon={<FileSignature className="w-4 h-4" />} label="قراردادها" />
             <div className="pt-3 pb-1 px-3">
               <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">بخش‌ها</p>
             </div>
@@ -96,6 +111,18 @@ export default function Sidebar({ sections = [], activeSectionId }) {
               label="مسئولین پروژه‌ها"
             />
           </>
+        )}
+
+        {user?.role === 'purchase_admin' && (
+          <SidebarLink to="/purchases" icon={<ShoppingCart className="w-4 h-4" />} label="خریدها" />
+        )}
+
+        {user?.role === 'tender_admin' && (
+          <SidebarLink to="/tenders" icon={<Gavel className="w-4 h-4" />} label="مناقصات" />
+        )}
+
+        {user?.role === 'contract_admin' && (
+          <SidebarLink to="/contracts" icon={<FileSignature className="w-4 h-4" />} label="قراردادها" />
         )}
       </nav>
 

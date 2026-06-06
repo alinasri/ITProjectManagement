@@ -17,7 +17,7 @@ router.post('/', requireAuth, requireRole('super_admin'), (req, res) => {
   if (!username?.trim() || !password || !role) {
     return res.status(400).json({ error: 'username, password and role are required' });
   }
-  if (!['it_head', 'section_head'].includes(role)) {
+  if (!['it_head', 'section_head', 'purchase_admin', 'tender_admin', 'contract_admin'].includes(role)) {
     return res.status(400).json({ error: 'Invalid role' });
   }
   if (role === 'section_head' && !section_id) {

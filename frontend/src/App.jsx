@@ -7,6 +7,9 @@ import AdminDashboard from './pages/AdminDashboard';
 import ITHeadDashboard from './pages/ITHeadDashboard';
 import SectionDashboard from './pages/SectionDashboard';
 import ChangePasswordPage from './pages/ChangePasswordPage';
+import PurchasesPage from './pages/PurchasesPage';
+import TendersPage from './pages/TendersPage';
+import ContractsPage from './pages/ContractsPage';
 
 function FullPageSpinner() {
   return (
@@ -48,6 +51,9 @@ function RoleRedirect() {
   if (user.role === 'super_admin') return <Navigate to="/admin" replace />;
   if (user.role === 'it_head') return <Navigate to="/it-head" replace />;
   if (user.role === 'section_head') return <Navigate to={`/section/${user.section_id}`} replace />;
+  if (user.role === 'purchase_admin') return <Navigate to="/purchases" replace />;
+  if (user.role === 'tender_admin') return <Navigate to="/tenders" replace />;
+  if (user.role === 'contract_admin') return <Navigate to="/contracts" replace />;
   return <Navigate to="/login" replace />;
 }
 
@@ -81,6 +87,15 @@ export default function App() {
             </Route>
             <Route element={<RequireAuth roles={['section_head', 'super_admin', 'it_head']} />}>
               <Route path="/section/:sectionId/*" element={<SectionDashboard />} />
+            </Route>
+            <Route element={<RequireAuth roles={['super_admin', 'it_head', 'purchase_admin']} />}>
+              <Route path="/purchases" element={<PurchasesPage />} />
+            </Route>
+            <Route element={<RequireAuth roles={['super_admin', 'it_head', 'tender_admin']} />}>
+              <Route path="/tenders" element={<TendersPage />} />
+            </Route>
+            <Route element={<RequireAuth roles={['super_admin', 'it_head', 'contract_admin']} />}>
+              <Route path="/contracts" element={<ContractsPage />} />
             </Route>
           </Route>
 

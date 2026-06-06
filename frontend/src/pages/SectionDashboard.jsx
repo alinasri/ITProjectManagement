@@ -1,5 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
-import { createPortal } from 'react-dom';
+import { useState, useEffect, useCallback } from 'react';
 import { Routes, Route, NavLink, useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import PageHeader from '../components/PageHeader';
@@ -7,9 +6,10 @@ import StatCard from '../components/StatCard';
 import StatusBadge, { STATUS_OPTIONS } from '../components/StatusBadge';
 import Modal from '../components/Modal';
 import ConfirmDialog from '../components/ConfirmDialog';
+import MultiSelect from '../components/MultiSelect';
 import { projects as projectsApi, personnel as personnelApi, customColumns as colsApi, ongoingTasks as ongoingTasksApi } from '../api';
 import { useSections } from '../context/SectionsContext';
-import { Plus, Trash2, PencilLine, Users, FolderKanban, Columns, Check, X, ListChecks, ChevronDown } from 'lucide-react';
+import { Plus, Trash2, PencilLine, Users, FolderKanban, Columns, Check, X, ListChecks } from 'lucide-react';
 
 export default function SectionDashboard() {
   const { sectionId } = useParams();
@@ -51,77 +51,6 @@ function SectionTabs({ sectionId }) {
         مسئولین
       </NavLink>
     </div>
-  );
-}
-
-// ── Multi-person checkbox dropdown (for مسئول selection) ─────────────────────
-
-function MultiPersonSelect({ personnel, selectedIds, onChange }) {
-  const [open, setOpen] = useState(false);
-  const [rect, setRect] = useState(null);
-  const btnRef = useRef(null);
-  const panelRef = useRef(null);
-
-  useEffect(() => {
-    if (!open) return;
-    const updateRect = () => setRect(btnRef.current?.getBoundingClientRect() ?? null);
-    updateRect();
-    const onClickOutside = (e) => {
-      if (btnRef.current?.contains(e.target) || panelRef.current?.contains(e.target)) return;
-      setOpen(false);
-    };
-    window.addEventListener('scroll', updateRect, true);
-    window.addEventListener('resize', updateRect);
-    document.addEventListener('mousedown', onClickOutside);
-    return () => {
-      window.removeEventListener('scroll', updateRect, true);
-      window.removeEventListener('resize', updateRect);
-      document.removeEventListener('mousedown', onClickOutside);
-    };
-  }, [open]);
-
-  const toggle = (id) => {
-    onChange(selectedIds.includes(id) ? selectedIds.filter(x => x !== id) : [...selectedIds, id]);
-  };
-
-  const selectedNames = personnel.filter(p => selectedIds.includes(p.id)).map(p => p.name);
-
-  return (
-    <>
-      <button
-        ref={btnRef}
-        type="button"
-        onClick={() => setOpen(o => !o)}
-        className="w-full flex items-center justify-between gap-2 bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-sm text-right focus:outline-none focus:border-indigo-500"
-      >
-        <span className="truncate">
-          {selectedNames.length ? selectedNames.join('، ') : <span className="text-gray-500">— انتخاب کنید —</span>}
-        </span>
-        <ChevronDown className="w-3.5 h-3.5 text-gray-500 shrink-0" />
-      </button>
-      {open && rect && createPortal(
-        <div
-          ref={panelRef}
-          style={{ position: 'fixed', top: rect.bottom + 4, left: rect.left, width: rect.width }}
-          className="z-50 max-h-48 overflow-y-auto bg-gray-800 border border-gray-700 rounded-lg shadow-xl scrollbar-thin"
-        >
-          {personnel.length === 0 ? (
-            <p className="px-3 py-2 text-sm text-gray-500">شخصی ثبت نشده است</p>
-          ) : personnel.map(per => (
-            <label key={per.id} className="flex items-center gap-2 px-3 py-2 hover:bg-gray-700/60 cursor-pointer text-sm text-gray-200">
-              <input
-                type="checkbox"
-                checked={selectedIds.includes(per.id)}
-                onChange={() => toggle(per.id)}
-                className="rounded border-gray-600 bg-gray-700 text-indigo-500 focus:ring-indigo-500 focus:ring-offset-gray-900"
-              />
-              {per.name}
-            </label>
-          ))}
-        </div>,
-        document.body
-      )}
-    </>
   );
 }
 
@@ -325,10 +254,11 @@ function ProjectsTab() {
                         />
                       </td>
                       <td className="px-2 py-2">
-                        <MultiPersonSelect
-                          personnel={personnel}
+                        <MultiSelect
+                          items={personnel}
                           selectedIds={editRow.responsible_ids}
                           onChange={ids => setEditRow(r => ({ ...r, responsible_ids: ids }))}
+                          emptyLabel="شخصی ثبت نشده است"
                         />
                       </td>
                       <td className="px-2 py-2">
@@ -693,10 +623,11 @@ function OngoingTasksTab() {
                         />
                       </td>
                       <td className="px-2 py-2">
-                        <MultiPersonSelect
-                          personnel={personnel}
+                        <MultiSelect
+                          items={personnel}
                           selectedIds={editRow.responsible_ids}
                           onChange={ids => setEditRow(r => ({ ...r, responsible_ids: ids }))}
+                          emptyLabel="شخصی ثبت نشده است"
                         />
                       </td>
                       <td className="px-2 py-2">

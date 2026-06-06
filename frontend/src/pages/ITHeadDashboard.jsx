@@ -3,13 +3,16 @@ import { useNavigate } from 'react-router-dom';
 import PageHeader from '../components/PageHeader';
 import StatCard from '../components/StatCard';
 import StatusBadge from '../components/StatusBadge';
-import { projects as projectsApi, ongoingTasks as ongoingTasksApi } from '../api';
+import {
+  projects as projectsApi, ongoingTasks as ongoingTasksApi,
+  purchases as purchasesApi, tenders as tendersApi, contracts as contractsApi,
+} from '../api';
 import { useSections } from '../context/SectionsContext';
 import {
   PieChart, Pie, Cell, Tooltip, ResponsiveContainer,
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Legend,
 } from 'recharts';
-import { ChevronLeft } from 'lucide-react';
+import { ChevronLeft, ShoppingCart, Gavel, FileSignature } from 'lucide-react';
 
 const STATUS_COLORS = {
   not_started: '#6b7280',
@@ -29,14 +32,23 @@ export default function ITHeadDashboard() {
   const { sections } = useSections();
   const [allProjects, setAllProjects] = useState([]);
   const [allTasks, setAllTasks] = useState([]);
+  const [allPurchases, setAllPurchases] = useState([]);
+  const [allTenders, setAllTenders] = useState([]);
+  const [allContracts, setAllContracts] = useState([]);
   const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
 
   useEffect(() => {
-    Promise.all([projectsApi.list(), ongoingTasksApi.list()])
-      .then(([pRes, tRes]) => {
+    Promise.all([
+      projectsApi.list(), ongoingTasksApi.list(),
+      purchasesApi.list(), tendersApi.list(), contractsApi.list(),
+    ])
+      .then(([pRes, tRes, puRes, teRes, coRes]) => {
         setAllProjects(pRes.data);
         setAllTasks(tRes.data);
+        setAllPurchases(puRes.data);
+        setAllTenders(teRes.data);
+        setAllContracts(coRes.data);
       })
       .finally(() => setLoading(false));
   }, []);
@@ -133,6 +145,70 @@ export default function ITHeadDashboard() {
             </BarChart>
           </ResponsiveContainer>
         </div>
+      </div>
+
+      {/* Organizational registries */}
+      <h2 className="text-sm font-semibold text-gray-400 mb-4 uppercase tracking-wider">ثبت‌های سازمانی</h2>
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
+        <button
+          onClick={() => navigate('/purchases')}
+          className="bg-gray-900 border border-gray-800 hover:border-indigo-700/60 rounded-2xl p-5 text-right transition-all group"
+        >
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-3">
+              <div className="w-9 h-9 bg-indigo-900/40 border border-indigo-800/40 rounded-xl flex items-center justify-center">
+                <ShoppingCart className="w-4 h-4 text-indigo-400" />
+              </div>
+              <h3 className="font-semibold text-gray-100">خریدها</h3>
+            </div>
+            <ChevronLeft className="w-4 h-4 text-gray-600 group-hover:text-indigo-400 transition-colors" />
+          </div>
+          <p className="text-2xl font-bold text-white mb-2">{allPurchases.length} <span className="text-sm font-normal text-gray-500">مورد</span></p>
+          <div className="flex gap-4 text-sm">
+            <span className="text-amber-400">{allPurchases.filter(p => p.status === 'pending').length} در انتظار</span>
+            <span className="text-emerald-400">{allPurchases.filter(p => p.status === 'delivered').length} تحویل شده</span>
+          </div>
+        </button>
+
+        <button
+          onClick={() => navigate('/tenders')}
+          className="bg-gray-900 border border-gray-800 hover:border-indigo-700/60 rounded-2xl p-5 text-right transition-all group"
+        >
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-3">
+              <div className="w-9 h-9 bg-indigo-900/40 border border-indigo-800/40 rounded-xl flex items-center justify-center">
+                <Gavel className="w-4 h-4 text-indigo-400" />
+              </div>
+              <h3 className="font-semibold text-gray-100">مناقصات</h3>
+            </div>
+            <ChevronLeft className="w-4 h-4 text-gray-600 group-hover:text-indigo-400 transition-colors" />
+          </div>
+          <p className="text-2xl font-bold text-white mb-2">{allTenders.length} <span className="text-sm font-normal text-gray-500">مورد</span></p>
+          <div className="flex gap-4 text-sm">
+            <span className="text-blue-400">{allTenders.filter(t => t.status === 'open').length} در حال برگزاری</span>
+            <span className="text-emerald-400">{allTenders.filter(t => t.status === 'awarded').length} برنده اعلام شده</span>
+          </div>
+        </button>
+
+        <button
+          onClick={() => navigate('/contracts')}
+          className="bg-gray-900 border border-gray-800 hover:border-indigo-700/60 rounded-2xl p-5 text-right transition-all group"
+        >
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-3">
+              <div className="w-9 h-9 bg-indigo-900/40 border border-indigo-800/40 rounded-xl flex items-center justify-center">
+                <FileSignature className="w-4 h-4 text-indigo-400" />
+              </div>
+              <h3 className="font-semibold text-gray-100">قراردادها</h3>
+            </div>
+            <ChevronLeft className="w-4 h-4 text-gray-600 group-hover:text-indigo-400 transition-colors" />
+          </div>
+          <p className="text-2xl font-bold text-white mb-2">{allContracts.length} <span className="text-sm font-normal text-gray-500">مورد</span></p>
+          <div className="flex gap-4 text-sm">
+            <span className="text-emerald-400">{allContracts.filter(c => c.status === 'active').length} فعال</span>
+            <span className="text-gray-400">{allContracts.filter(c => c.status === 'expired').length} خاتمه یافته</span>
+          </div>
+        </button>
       </div>
 
       {/* Section cards */}

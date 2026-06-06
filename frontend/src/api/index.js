@@ -46,3 +46,24 @@ export const customColumns = {
   create: (data) => api.post('/custom-columns', data),
   remove: (id) => api.delete(`/custom-columns/${id}`),
 };
+
+export const purchases = {
+  list: () => api.get('/purchases'),
+  create: (data) => api.post('/purchases', data),
+  update: (id, data) => api.put(`/purchases/${id}`, data),
+  remove: (id) => api.delete(`/purchases/${id}`),
+};
+
+export const tenders = {
+  list: () => api.get('/tenders'),
+  create: (data) => api.post('/tenders', data),
+  update: (id, data) => api.put(`/tenders/${id}`, data),
+  remove: (id) => api.delete(`/tenders/${id}`),
+};
+
+export const contracts = {
+  list: () => api.get('/contracts'),
+  create: (data) => api.post('/contracts', data),
+  update: (id, data) => api.put(`/contracts/${id}`, data),
+  remove: (id) => api.delete(`/contracts/${id}`),
+};

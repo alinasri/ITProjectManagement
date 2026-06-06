@@ -241,7 +241,10 @@ function UsersTab() {
     finally { setDeleteLoading(false); }
   };
 
-  const roleLabel = { super_admin: 'مدیر سیستم', it_head: 'مدیر IT', section_head: 'مسئول بخش' };
+  const roleLabel = {
+    super_admin: 'مدیر سیستم', it_head: 'مدیر IT', section_head: 'مسئول بخش',
+    purchase_admin: 'مدیر خرید', tender_admin: 'مدیر مناقصات', contract_admin: 'مدیر قراردادها',
+  };
 
   if (loading) return <Spinner />;
 
@@ -285,7 +288,8 @@ function UsersTab() {
                     <span className={`inline-flex px-2.5 py-0.5 rounded-full text-xs font-medium ${
                       u.role === 'super_admin' ? 'bg-purple-900/50 text-purple-300' :
                       u.role === 'it_head' ? 'bg-blue-900/50 text-blue-300' :
-                      'bg-emerald-900/50 text-emerald-300'
+                      u.role === 'section_head' ? 'bg-emerald-900/50 text-emerald-300' :
+                      'bg-amber-900/50 text-amber-300'
                     }`}>
                       {roleLabel[u.role]}
                     </span>
@@ -411,6 +415,9 @@ function UserFormModal({ open, onClose, sections, editUser, onSaved }) {
           >
             <option value="it_head">مدیر IT</option>
             <option value="section_head">مسئول بخش</option>
+            <option value="purchase_admin">مدیر خرید</option>
+            <option value="tender_admin">مدیر مناقصات</option>
+            <option value="contract_admin">مدیر قراردادها</option>
           </select>
         </div>
         {form.role === 'section_head' && (

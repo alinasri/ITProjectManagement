@@ -16,6 +16,9 @@ app.use('/api/personnel', require('./routes/personnel'));
 app.use('/api/ongoing-tasks', require('./routes/ongoingTasks'));
 app.use('/api/projects', require('./routes/projects'));
 app.use('/api/custom-columns', require('./routes/customColumns'));
+app.use('/api/purchases', require('./routes/purchases'));
+app.use('/api/tenders', require('./routes/tenders'));
+app.use('/api/contracts', require('./routes/contracts'));
 
 // Serve React build in production
 const publicDir = path.join(__dirname, '../public');

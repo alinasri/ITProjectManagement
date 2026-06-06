@@ -1,0 +1,75 @@
+const express = require('express');
+const db = require('../db/schema');
+const { requireAuth, requireRole } = require('../middleware/auth');
+
+const router = express.Router();
+
+function enrichContracts(rows) {
+  return rows.map(r => {
+    const sections = db.prepare(
+      `SELECT s.id, s.name FROM contract_sections cs
+       JOIN sections s ON s.id = cs.section_id
+       WHERE cs.contract_id = ? ORDER BY s.name`
+    ).all(r.id);
+    return { ...r, sections };
+  });
+}
+
+function setSections(id, sectionIds) {
+  db.prepare('DELETE FROM contract_sections WHERE contract_id = ?').run(id);
+  const insert = db.prepare('INSERT INTO contract_sections (contract_id, section_id) VALUES (?, ?)');
+  sectionIds.forEach(sid => insert.run(id, sid));
+}
+
+router.get('/', requireAuth, requireRole('super_admin', 'it_head', 'contract_admin'), (req, res) => {
+  const rows = db.prepare('SELECT * FROM contracts ORDER BY id').all();
+  res.json(enrichContracts(rows));
+});
+
+router.post('/', requireAuth, requireRole('super_admin', 'contract_admin'), (req, res) => {
+  const { title, status, counterparty, start_date, end_date, amount, description, section_ids } = req.body;
+  if (!title?.trim()) return res.status(400).json({ error: 'Title required' });
+
+  const result = db.prepare(
+    `INSERT INTO contracts (title, status, counterparty, start_date, end_date, amount, description)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`
+  ).run(
+    title.trim(), status || 'active', counterparty || '', start_date || '', end_date || '', amount || '', description || ''
+  );
+  const id = result.lastInsertRowid;
+  if (Array.isArray(section_ids)) setSections(id, section_ids);
+  const row = db.prepare('SELECT * FROM contracts WHERE id = ?').get(id);
+  res.status(201).json(enrichContracts([row])[0]);
+});
+
+router.put('/:id', requireAuth, requireRole('super_admin', 'contract_admin'), (req, res) => {
+  const row = db.prepare('SELECT * FROM contracts WHERE id = ?').get(req.params.id);
+  if (!row) return res.status(404).json({ error: 'Not found' });
+
+  const { title, status, counterparty, start_date, end_date, amount, description, section_ids } = req.body;
+  db.prepare(
+    `UPDATE contracts SET title = ?, status = ?, counterparty = ?, start_date = ?, end_date = ?, amount = ?, description = ?, updated_at = datetime('now') WHERE id = ?`
+  ).run(
+    title ?? row.title,
+    status ?? row.status,
+    counterparty ?? row.counterparty,
+    start_date ?? row.start_date,
+    end_date ?? row.end_date,
+    amount ?? row.amount,
+    description ?? row.description,
+    req.params.id
+  );
+
+  if (Array.isArray(section_ids)) setSections(req.params.id, section_ids);
+
+  res.json(enrichContracts([db.prepare('SELECT * FROM contracts WHERE id = ?').get(req.params.id)])[0]);
+});
+
+router.delete('/:id', requireAuth, requireRole('super_admin', 'contract_admin'), (req, res) => {
+  const row = db.prepare('SELECT * FROM contracts WHERE id = ?').get(req.params.id);
+  if (!row) return res.status(404).json({ error: 'Not found' });
+  db.prepare('DELETE FROM contracts WHERE id = ?').run(req.params.id);
+  res.json({ ok: true });
+});
+
+module.exports = router;
