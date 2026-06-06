@@ -86,14 +86,14 @@ export default function Sidebar({ sections = [], activeSectionId }) {
               label="پروژه‌های من"
             />
             <SidebarLink
-              to={`/section/${user.section_id}/personnel`}
-              icon={<Users className="w-4 h-4" />}
-              label="مسئولین پروژه‌ها"
-            />
-            <SidebarLink
               to={`/section/${user.section_id}/ongoing-tasks`}
               icon={<ListChecks className="w-4 h-4" />}
               label="وظایف جاری"
+            />
+            <SidebarLink
+              to={`/section/${user.section_id}/personnel`}
+              icon={<Users className="w-4 h-4" />}
+              label="مسئولین پروژه‌ها"
             />
           </>
         )}

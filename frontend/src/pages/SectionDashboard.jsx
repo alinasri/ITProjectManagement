@@ -41,13 +41,13 @@ function SectionTabs({ sectionId }) {
         <FolderKanban className="w-4 h-4" />
         پروژه‌ها
       </NavLink>
-      <NavLink to={`${base}/personnel`} className={tabClass}>
-        <Users className="w-4 h-4" />
-        مسئولین
-      </NavLink>
       <NavLink to={`${base}/ongoing-tasks`} className={tabClass}>
         <ListChecks className="w-4 h-4" />
         وظایف جاری
+      </NavLink>
+      <NavLink to={`${base}/personnel`} className={tabClass}>
+        <Users className="w-4 h-4" />
+        مسئولین
       </NavLink>
     </div>
   );
