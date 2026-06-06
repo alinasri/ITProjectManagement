@@ -145,6 +145,15 @@ export default function Sidebar({ sections = [], activeSectionId }) {
           خروج از سیستم
         </button>
       </div>
+
+      {/* Developer credit */}
+      <div className="px-5 py-3 border-t border-gray-800/60 text-center">
+        <p className="text-[11px] text-gray-600 leading-relaxed">
+          توسعه دهنده: علی نصری
+          <br />
+          واحد فناوری اطلاعات — مدیریت اکتشاف نفت
+        </p>
+      </div>
     </aside>
   );
 }

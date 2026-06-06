@@ -81,6 +81,12 @@ export default function LoginPage() {
             </button>
           </form>
         </div>
+
+        <p className="text-center text-[11px] text-gray-600 leading-relaxed mt-6">
+          توسعه دهنده: علی نصری
+          <br />
+          واحد فناوری اطلاعات — مدیریت اکتشاف نفت
+        </p>
       </div>
     </div>
   );
