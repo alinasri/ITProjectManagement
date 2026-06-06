@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { Monitor } from 'lucide-react';
+import PasswordInput from '../components/PasswordInput';
 
 export default function LoginPage() {
   const [username, setUsername] = useState('');
@@ -31,7 +32,6 @@ export default function LoginPage() {
   return (
     <div className="min-h-screen bg-gray-950 flex items-center justify-center px-4">
       <div className="w-full max-w-md">
-        {/* Logo / Header */}
         <div className="text-center mb-10">
           <div className="inline-flex items-center justify-center w-16 h-16 bg-indigo-600 rounded-2xl mb-4 shadow-lg shadow-indigo-900/50">
             <Monitor className="w-8 h-8 text-white" />
@@ -40,7 +40,6 @@ export default function LoginPage() {
           <p className="text-gray-400 text-sm">اداره فناوری اطلاعات</p>
         </div>
 
-        {/* Card */}
         <div className="bg-gray-900 border border-gray-800 rounded-2xl p-8 shadow-2xl">
           <h2 className="text-lg font-semibold text-gray-100 mb-6">ورود به سیستم</h2>
 
@@ -65,14 +64,12 @@ export default function LoginPage() {
             </div>
             <div>
               <label className="block text-sm text-gray-400 mb-2">رمز عبور</label>
-              <input
-                type="password"
+              <PasswordInput
                 value={password}
                 onChange={e => setPassword(e.target.value)}
                 autoComplete="current-password"
-                required
-                className="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition"
                 placeholder="رمز عبور را وارد کنید"
+                required
               />
             </div>
             <button

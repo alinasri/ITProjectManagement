@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { auth as authApi } from '../api';
 import { KeyRound } from 'lucide-react';
+import PasswordInput from '../components/PasswordInput';
 
 export default function ChangePasswordPage() {
   const [current, setCurrent] = useState('');
@@ -51,23 +52,33 @@ export default function ChangePasswordPage() {
             </div>
           )}
           <form onSubmit={handleSubmit} className="space-y-4">
-            {[
-              { label: 'رمز عبور فعلی', val: current, set: setCurrent, auto: 'current-password' },
-              { label: 'رمز عبور جدید', val: newPass, set: setNewPass, auto: 'new-password' },
-              { label: 'تکرار رمز عبور جدید', val: confirm, set: setConfirm, auto: 'new-password' },
-            ].map(({ label, val, set, auto }) => (
-              <div key={label}>
-                <label className="block text-sm text-gray-400 mb-2">{label}</label>
-                <input
-                  type="password"
-                  value={val}
-                  onChange={e => set(e.target.value)}
-                  autoComplete={auto}
-                  required
-                  className="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition"
-                />
-              </div>
-            ))}
+            <div>
+              <label className="block text-sm text-gray-400 mb-2">رمز عبور فعلی</label>
+              <PasswordInput
+                value={current}
+                onChange={e => setCurrent(e.target.value)}
+                autoComplete="current-password"
+                required
+              />
+            </div>
+            <div>
+              <label className="block text-sm text-gray-400 mb-2">رمز عبور جدید</label>
+              <PasswordInput
+                value={newPass}
+                onChange={e => setNewPass(e.target.value)}
+                autoComplete="new-password"
+                required
+              />
+            </div>
+            <div>
+              <label className="block text-sm text-gray-400 mb-2">تکرار رمز عبور جدید</label>
+              <PasswordInput
+                value={confirm}
+                onChange={e => setConfirm(e.target.value)}
+                autoComplete="new-password"
+                required
+              />
+            </div>
             <button
               type="submit"
               disabled={loading}

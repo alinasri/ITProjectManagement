@@ -7,6 +7,7 @@ import Modal from '../components/Modal';
 import ConfirmDialog from '../components/ConfirmDialog';
 import { sections as sectionsApi, users as usersApi, projects as projectsApi } from '../api';
 import { useSections } from '../context/SectionsContext';
+import PasswordInput from '../components/PasswordInput';
 import { Plus, Trash2, PencilLine, Check, X, ChevronLeft } from 'lucide-react';
 
 export default function AdminDashboard() {
@@ -394,11 +395,10 @@ function UserFormModal({ open, onClose, sections, editUser, onSaved }) {
           <label className="block text-sm text-gray-400 mb-2">
             رمز عبور {isEdit && <span className="text-gray-600">(خالی = بدون تغییر)</span>}
           </label>
-          <input
-            type="password"
-            className="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-indigo-500"
+          <PasswordInput
             value={form.password}
             onChange={e => setForm(f => ({ ...f, password: e.target.value }))}
+            autoComplete="new-password"
             required={!isEdit}
           />
         </div>
