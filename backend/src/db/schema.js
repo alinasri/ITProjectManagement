@@ -74,7 +74,33 @@ db.exec(`
     created_at TEXT DEFAULT (datetime('now')),
     updated_at TEXT DEFAULT (datetime('now'))
   );
+
+  CREATE TABLE IF NOT EXISTS project_responsibles (
+    project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    personnel_id INTEGER NOT NULL REFERENCES personnel(id) ON DELETE CASCADE,
+    PRIMARY KEY (project_id, personnel_id)
+  );
+
+  CREATE TABLE IF NOT EXISTS ongoing_task_responsibles (
+    task_id INTEGER NOT NULL REFERENCES ongoing_tasks(id) ON DELETE CASCADE,
+    personnel_id INTEGER NOT NULL REFERENCES personnel(id) ON DELETE CASCADE,
+    PRIMARY KEY (task_id, personnel_id)
+  );
 `);
+
+// Migrate single responsible_id columns to many-to-many join tables
+// (projects/ongoing_tasks can each have more than one مسئول)
+for (const [table, joinTable, fk] of [
+  ['projects', 'project_responsibles', 'project_id'],
+  ['ongoing_tasks', 'ongoing_task_responsibles', 'task_id'],
+]) {
+  const hasResponsibleId = db.prepare(`PRAGMA table_info(${table})`).all().some(c => c.name === 'responsible_id');
+  if (hasResponsibleId) {
+    db.exec(`INSERT OR IGNORE INTO ${joinTable} (${fk}, personnel_id)
+             SELECT id, responsible_id FROM ${table} WHERE responsible_id IS NOT NULL`);
+    db.exec(`ALTER TABLE ${table} DROP COLUMN responsible_id`);
+  }
+}
 
 // Seed initial data only once
 const existing = db.prepare('SELECT COUNT(*) as c FROM sections').get();

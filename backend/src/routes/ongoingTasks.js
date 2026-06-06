@@ -6,11 +6,19 @@ const router = express.Router();
 
 function enrichTasks(tasks) {
   return tasks.map(t => {
-    const responsible = t.responsible_id
-      ? db.prepare('SELECT id, name FROM personnel WHERE id = ?').get(t.responsible_id)
-      : null;
-    return { ...t, responsible };
+    const responsibles = db.prepare(
+      `SELECT per.id, per.name FROM ongoing_task_responsibles otr
+       JOIN personnel per ON per.id = otr.personnel_id
+       WHERE otr.task_id = ? ORDER BY per.name`
+    ).all(t.id);
+    return { ...t, responsibles };
   });
+}
+
+function setResponsibles(table, fk, id, personnelIds) {
+  db.prepare(`DELETE FROM ${table} WHERE ${fk} = ?`).run(id);
+  const insert = db.prepare(`INSERT INTO ${table} (${fk}, personnel_id) VALUES (?, ?)`);
+  personnelIds.forEach(pid => insert.run(id, pid));
 }
 
 router.get('/', requireAuth, (req, res) => {
@@ -27,16 +35,18 @@ router.get('/', requireAuth, (req, res) => {
 });
 
 router.post('/', requireAuth, requireRole('super_admin', 'section_head'), (req, res) => {
-  const { title, section_id, responsible_id, note } = req.body;
+  const { title, section_id, responsible_ids, note } = req.body;
   if (!title?.trim()) return res.status(400).json({ error: 'Title required' });
   const sectionId = req.user.role === 'section_head' ? req.user.section_id : section_id;
   if (!sectionId) return res.status(400).json({ error: 'section_id required' });
 
   const result = db.prepare(
-    `INSERT INTO ongoing_tasks (title, section_id, responsible_id, note)
-     VALUES (?, ?, ?, ?)`
-  ).run(title.trim(), sectionId, responsible_id || null, note || '');
-  const task = db.prepare('SELECT * FROM ongoing_tasks WHERE id = ?').get(result.lastInsertRowid);
+    `INSERT INTO ongoing_tasks (title, section_id, note)
+     VALUES (?, ?, ?)`
+  ).run(title.trim(), sectionId, note || '');
+  const taskId = result.lastInsertRowid;
+  if (Array.isArray(responsible_ids)) setResponsibles('ongoing_task_responsibles', 'task_id', taskId, responsible_ids);
+  const task = db.prepare('SELECT * FROM ongoing_tasks WHERE id = ?').get(taskId);
   res.status(201).json(enrichTasks([task])[0]);
 });
 
@@ -47,15 +57,16 @@ router.put('/:id', requireAuth, requireRole('super_admin', 'section_head'), (req
     return res.status(403).json({ error: 'Forbidden' });
   }
 
-  const { title, responsible_id, note } = req.body;
+  const { title, responsible_ids, note } = req.body;
   db.prepare(
-    `UPDATE ongoing_tasks SET title = ?, responsible_id = ?, note = ?, updated_at = datetime('now') WHERE id = ?`
+    `UPDATE ongoing_tasks SET title = ?, note = ?, updated_at = datetime('now') WHERE id = ?`
   ).run(
     title ?? task.title,
-    responsible_id !== undefined ? responsible_id : task.responsible_id,
     note ?? task.note,
     req.params.id
   );
+
+  if (Array.isArray(responsible_ids)) setResponsibles('ongoing_task_responsibles', 'task_id', req.params.id, responsible_ids);
 
   res.json(enrichTasks([db.prepare('SELECT * FROM ongoing_tasks WHERE id = ?').get(req.params.id)])[0]);
 });
