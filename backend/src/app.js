@@ -13,6 +13,7 @@ app.use('/api/auth', require('./routes/auth'));
 app.use('/api/sections', require('./routes/sections'));
 app.use('/api/users', require('./routes/users'));
 app.use('/api/personnel', require('./routes/personnel'));
+app.use('/api/ongoing-tasks', require('./routes/ongoingTasks'));
 app.use('/api/projects', require('./routes/projects'));
 app.use('/api/custom-columns', require('./routes/customColumns'));
 

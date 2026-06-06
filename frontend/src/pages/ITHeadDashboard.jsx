@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import PageHeader from '../components/PageHeader';
 import StatCard from '../components/StatCard';
 import StatusBadge from '../components/StatusBadge';
-import { projects as projectsApi } from '../api';
+import { projects as projectsApi, ongoingTasks as ongoingTasksApi } from '../api';
 import { useSections } from '../context/SectionsContext';
 import {
   PieChart, Pie, Cell, Tooltip, ResponsiveContainer,
@@ -28,12 +28,16 @@ const STATUS_LABELS = {
 export default function ITHeadDashboard() {
   const { sections } = useSections();
   const [allProjects, setAllProjects] = useState([]);
+  const [allTasks, setAllTasks] = useState([]);
   const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
 
   useEffect(() => {
-    projectsApi.list()
-      .then(r => setAllProjects(r.data))
+    Promise.all([projectsApi.list(), ongoingTasksApi.list()])
+      .then(([pRes, tRes]) => {
+        setAllProjects(pRes.data);
+        setAllTasks(tRes.data);
+      })
       .finally(() => setLoading(false));
   }, []);
 
@@ -74,11 +78,12 @@ export default function ITHeadDashboard() {
       <PageHeader title="داشبورد مدیر IT" subtitle="نمای کلی تمام بخش‌ها" />
 
       {/* Top stats */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-4 mb-8">
         <StatCard label="کل پروژه‌ها" value={total} icon="📋" color="indigo" />
         <StatCard label="در حال انجام" value={inProgress} icon="🔄" color="blue" />
         <StatCard label="متوقف" value={onHold} icon="⏸️" color="amber" />
         <StatCard label="تکمیل شده" value={completed} icon="✅" color="emerald" />
+        <StatCard label="وظایف جاری" value={allTasks.length} icon="🗂️" color="gray" />
       </div>
 
       {/* Charts row */}
@@ -135,6 +140,7 @@ export default function ITHeadDashboard() {
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
         {sections.map(s => {
           const sp = allProjects.filter(p => p.section_id === s.id);
+          const st = allTasks.filter(t => t.section_id === s.id);
           const pct = sp.length ? Math.round((sp.filter(p => p.status === 'completed').length / sp.length) * 100) : 0;
           return (
             <button
@@ -147,10 +153,11 @@ export default function ITHeadDashboard() {
                 <ChevronLeft className="w-4 h-4 text-gray-600 group-hover:text-indigo-400 transition-colors shrink-0 mt-0.5" />
               </div>
 
-              <div className="flex items-center gap-4 text-sm mb-4">
+              <div className="flex items-center gap-4 text-sm mb-4 flex-wrap">
                 <span className="text-gray-400">{sp.length} پروژه</span>
                 <span className="text-emerald-400">{sp.filter(p => p.status === 'completed').length} تکمیل</span>
                 <span className="text-amber-400">{sp.filter(p => p.status === 'on_hold').length} متوقف</span>
+                <span className="text-gray-500">{st.length} وظیفه جاری</span>
               </div>
 
               {/* Progress bar */}

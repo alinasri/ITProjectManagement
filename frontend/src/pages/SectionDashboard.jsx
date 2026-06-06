@@ -6,16 +6,50 @@ import StatCard from '../components/StatCard';
 import StatusBadge, { STATUS_OPTIONS } from '../components/StatusBadge';
 import Modal from '../components/Modal';
 import ConfirmDialog from '../components/ConfirmDialog';
-import { projects as projectsApi, personnel as personnelApi, customColumns as colsApi } from '../api';
+import { projects as projectsApi, personnel as personnelApi, customColumns as colsApi, ongoingTasks as ongoingTasksApi } from '../api';
 import { useSections } from '../context/SectionsContext';
-import { Plus, Trash2, PencilLine, Users, FolderKanban, Columns, Check, X } from 'lucide-react';
+import { Plus, Trash2, PencilLine, Users, FolderKanban, Columns, Check, X, ListChecks } from 'lucide-react';
 
 export default function SectionDashboard() {
+  const { sectionId } = useParams();
   return (
-    <Routes>
-      <Route index element={<ProjectsTab />} />
-      <Route path="personnel" element={<PersonnelTab />} />
-    </Routes>
+    <div>
+      <SectionTabs sectionId={sectionId} />
+      <Routes>
+        <Route index element={<ProjectsTab />} />
+        <Route path="personnel" element={<PersonnelTab />} />
+        <Route path="ongoing-tasks" element={<OngoingTasksTab />} />
+      </Routes>
+    </div>
+  );
+}
+
+// ── Section Sub-Tabs ──────────────────────────────────────────────────────────
+// Lets every role (not just section heads via the sidebar) reach the
+// Personnel and Ongoing Tasks views for a section.
+
+function SectionTabs({ sectionId }) {
+  const base = `/section/${sectionId}`;
+  const tabClass = ({ isActive }) =>
+    `flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 transition-colors ${
+      isActive ? 'border-indigo-500 text-indigo-400' : 'border-transparent text-gray-400 hover:text-gray-200'
+    }`;
+
+  return (
+    <div className="flex items-center gap-1 mb-6 border-b border-gray-800">
+      <NavLink to={base} end className={tabClass}>
+        <FolderKanban className="w-4 h-4" />
+        پروژه‌ها
+      </NavLink>
+      <NavLink to={`${base}/personnel`} className={tabClass}>
+        <Users className="w-4 h-4" />
+        مسئولین
+      </NavLink>
+      <NavLink to={`${base}/ongoing-tasks`} className={tabClass}>
+        <ListChecks className="w-4 h-4" />
+        وظایف جاری
+      </NavLink>
+    </div>
   );
 }
 
@@ -466,6 +500,204 @@ function PersonnelTab() {
         onConfirm={deletePerson}
         loading={deleteLoading}
         message="آیا از حذف این مسئول اطمینان دارید؟"
+      />
+    </div>
+  );
+}
+
+// ── Ongoing Tasks Tab ─────────────────────────────────────────────────────────
+
+function OngoingTasksTab() {
+  const { sectionId } = useParams();
+  const { user } = useAuth();
+  const canEdit = user?.role === 'super_admin' || user?.role === 'section_head';
+
+  const [tasks, setTasks] = useState([]);
+  const [personnel, setPersonnel] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  const [editingId, setEditingId] = useState(null);
+  const [editRow, setEditRow] = useState({});
+
+  const [deleteTarget, setDeleteTarget] = useState(null);
+  const [deleteLoading, setDeleteLoading] = useState(false);
+
+  const [addRowLoading, setAddRowLoading] = useState(false);
+
+  const fetchAll = useCallback(async () => {
+    try {
+      const [tRes, perRes] = await Promise.all([
+        ongoingTasksApi.list(sectionId),
+        personnelApi.list(sectionId),
+      ]);
+      setTasks(tRes.data);
+      setPersonnel(perRes.data);
+    } finally {
+      setLoading(false);
+    }
+  }, [sectionId]);
+
+  useEffect(() => { fetchAll(); }, [fetchAll]);
+
+  const startEdit = (task) => {
+    setEditingId(task.id);
+    setEditRow({
+      title: task.title,
+      responsible_id: task.responsible_id ?? '',
+      note: task.note,
+    });
+  };
+
+  const saveEdit = async (taskId) => {
+    await ongoingTasksApi.update(taskId, {
+      ...editRow,
+      responsible_id: editRow.responsible_id || null,
+    });
+    setEditingId(null);
+    fetchAll();
+  };
+
+  const cancelEdit = () => setEditingId(null);
+
+  const addRow = async () => {
+    setAddRowLoading(true);
+    try {
+      await ongoingTasksApi.create({ title: 'وظیفه جدید', section_id: sectionId });
+      fetchAll();
+    } finally {
+      setAddRowLoading(false);
+    }
+  };
+
+  const deleteTask = async () => {
+    setDeleteLoading(true);
+    try {
+      await ongoingTasksApi.remove(deleteTarget);
+      setDeleteTarget(null);
+      fetchAll();
+    } finally {
+      setDeleteLoading(false);
+    }
+  };
+
+  if (loading) return (
+    <div className="flex items-center justify-center h-64">
+      <div className="w-8 h-8 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin" />
+    </div>
+  );
+
+  return (
+    <div>
+      <PageHeader
+        title="وظایف جاری"
+        subtitle={`${tasks.length} وظیفه`}
+        action={canEdit && (
+          <button
+            onClick={addRow}
+            disabled={addRowLoading}
+            className="flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-sm font-medium transition-colors"
+          >
+            <Plus className="w-4 h-4" />
+            وظیفه جدید
+          </button>
+        )}
+      />
+
+      <div className="bg-gray-900 border border-gray-800 rounded-2xl overflow-hidden">
+        <div className="overflow-x-auto scrollbar-thin">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-gray-800 bg-gray-800/50">
+                <th className="px-4 py-3 text-right text-gray-400 font-medium w-12">ردیف</th>
+                <th className="px-4 py-3 text-right text-gray-400 font-medium min-w-48">عنوان وظیفه</th>
+                <th className="px-4 py-3 text-right text-gray-400 font-medium min-w-36">مسئول</th>
+                <th className="px-4 py-3 text-right text-gray-400 font-medium min-w-64">وضعیت / یادداشت</th>
+                {canEdit && <th className="px-4 py-3 w-20" />}
+              </tr>
+            </thead>
+            <tbody>
+              {tasks.map((t, idx) => (
+                <tr key={t.id} className="border-b border-gray-800/60 hover:bg-gray-800/30 transition-colors group">
+                  <td className="px-4 py-3 text-gray-500 text-center">{idx + 1}</td>
+
+                  {editingId === t.id ? (
+                    <>
+                      <td className="px-2 py-2">
+                        <input
+                          className="w-full bg-gray-800 border border-indigo-500 rounded-lg px-3 py-1.5 text-white text-sm focus:outline-none"
+                          value={editRow.title}
+                          onChange={e => setEditRow(r => ({ ...r, title: e.target.value }))}
+                        />
+                      </td>
+                      <td className="px-2 py-2">
+                        <select
+                          className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-white text-sm focus:outline-none focus:border-indigo-500"
+                          value={editRow.responsible_id}
+                          onChange={e => setEditRow(r => ({ ...r, responsible_id: e.target.value }))}
+                        >
+                          <option value="">— انتخاب کنید —</option>
+                          {personnel.map(per => (
+                            <option key={per.id} value={per.id}>{per.name}</option>
+                          ))}
+                        </select>
+                      </td>
+                      <td className="px-2 py-2">
+                        <input
+                          className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-white text-sm focus:outline-none focus:border-indigo-500"
+                          value={editRow.note}
+                          onChange={e => setEditRow(r => ({ ...r, note: e.target.value }))}
+                        />
+                      </td>
+                      <td className="px-2 py-2">
+                        <div className="flex items-center gap-1">
+                          <button onClick={() => saveEdit(t.id)} className="p-1.5 bg-emerald-700 hover:bg-emerald-600 rounded-lg text-white">
+                            <Check className="w-3.5 h-3.5" />
+                          </button>
+                          <button onClick={cancelEdit} className="p-1.5 bg-gray-700 hover:bg-gray-600 rounded-lg text-white">
+                            <X className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </td>
+                    </>
+                  ) : (
+                    <>
+                      <td className="px-4 py-3 text-gray-200 font-medium">{t.title}</td>
+                      <td className="px-4 py-3 text-gray-300">{t.responsible?.name || <span className="text-gray-600">—</span>}</td>
+                      <td className="px-4 py-3 text-gray-300 max-w-md truncate">{t.note || <span className="text-gray-600">—</span>}</td>
+                      {canEdit && (
+                        <td className="px-4 py-3">
+                          <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <button onClick={() => startEdit(t)} className="p-1.5 text-gray-500 hover:text-indigo-400 hover:bg-indigo-900/30 rounded-lg transition-colors">
+                              <PencilLine className="w-3.5 h-3.5" />
+                            </button>
+                            <button onClick={() => setDeleteTarget(t.id)} className="p-1.5 text-gray-500 hover:text-red-400 hover:bg-red-900/30 rounded-lg transition-colors">
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </td>
+                      )}
+                    </>
+                  )}
+                </tr>
+              ))}
+              {tasks.length === 0 && (
+                <tr>
+                  <td colSpan={canEdit ? 5 : 4} className="px-4 py-12 text-center text-gray-600">
+                    هیچ وظیفه جاری ثبت نشده است
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <ConfirmDialog
+        open={!!deleteTarget}
+        onClose={() => setDeleteTarget(null)}
+        onConfirm={deleteTask}
+        loading={deleteLoading}
+        message="آیا از حذف این وظیفه اطمینان دارید؟ این عملیات قابل بازگشت نیست."
       />
     </div>
   );

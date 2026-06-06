@@ -1,6 +1,6 @@
 import { NavLink, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { LogOut, Monitor, Users, FolderKanban, LayoutDashboard, Shield, ChevronLeft } from 'lucide-react';
+import { LogOut, Monitor, Users, FolderKanban, LayoutDashboard, Shield, ChevronLeft, ListChecks } from 'lucide-react';
 
 const STATUS_LABELS = {
   not_started: 'شروع نشده',
@@ -89,6 +89,11 @@ export default function Sidebar({ sections = [], activeSectionId }) {
               to={`/section/${user.section_id}/personnel`}
               icon={<Users className="w-4 h-4" />}
               label="مسئولین پروژه‌ها"
+            />
+            <SidebarLink
+              to={`/section/${user.section_id}/ongoing-tasks`}
+              icon={<ListChecks className="w-4 h-4" />}
+              label="وظایف جاری"
             />
           </>
         )}

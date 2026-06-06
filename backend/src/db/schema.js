@@ -64,6 +64,16 @@ db.exec(`
     value TEXT DEFAULT '',
     UNIQUE(project_id, column_id)
   );
+
+  CREATE TABLE IF NOT EXISTS ongoing_tasks (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    title TEXT NOT NULL,
+    section_id INTEGER NOT NULL REFERENCES sections(id) ON DELETE CASCADE,
+    responsible_id INTEGER REFERENCES personnel(id) ON DELETE SET NULL,
+    note TEXT DEFAULT '',
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now'))
+  );
 `);
 
 // Seed initial data only once

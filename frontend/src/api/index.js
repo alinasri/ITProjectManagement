@@ -27,6 +27,13 @@ export const personnel = {
   remove: (id) => api.delete(`/personnel/${id}`),
 };
 
+export const ongoingTasks = {
+  list: (section_id) => api.get('/ongoing-tasks', { params: { section_id } }),
+  create: (data) => api.post('/ongoing-tasks', data),
+  update: (id, data) => api.put(`/ongoing-tasks/${id}`, data),
+  remove: (id) => api.delete(`/ongoing-tasks/${id}`),
+};
+
 export const projects = {
   list: (section_id) => api.get('/projects', { params: { section_id } }),
   create: (data) => api.post('/projects', data),
