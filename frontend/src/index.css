@@ -1,0 +1,19 @@
+@import "tailwindcss";
+
+@layer base {
+  body {
+    @apply bg-gray-950 text-gray-100 m-0;
+    direction: rtl;
+    font-family: 'Vazirmatn', 'Tahoma', 'Segoe UI', sans-serif;
+  }
+  #root {
+    @apply w-full min-h-screen;
+  }
+}
+
+@layer utilities {
+  .scrollbar-thin {
+    scrollbar-width: thin;
+    scrollbar-color: #374151 transparent;
+  }
+}

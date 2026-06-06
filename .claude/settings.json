@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cd \"e:\\\\Work\\\\IT Project Managment\\\\ITProjectManagement\" && mkdir -p backend/src/db backend/src/routes backend/src/middleware backend/src/services && echo \"Backend dirs created\")"
+    ],
+    "additionalDirectories": [
+      "e:\\Work\\IT Project Managment\\ITProjectManagement\\backend\\src"
+    ]
+  }
+}
