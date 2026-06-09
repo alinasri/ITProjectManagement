@@ -9,4 +9,11 @@ export default defineConfig({
       '/api': 'http://localhost:3000',
     },
   },
+  optimizeDeps: {
+    include: [
+      'react-date-object',
+      'react-date-object/calendars/persian',
+      'react-date-object/locales/persian_en',
+    ],
+  },
 })

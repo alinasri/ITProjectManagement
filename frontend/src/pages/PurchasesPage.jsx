@@ -4,6 +4,7 @@ import PageHeader from '../components/PageHeader';
 import StatCard from '../components/StatCard';
 import ConfirmDialog from '../components/ConfirmDialog';
 import MultiSelect from '../components/MultiSelect';
+import PersianDatePicker from '../components/PersianDatePicker';
 import { purchases as purchasesApi } from '../api';
 import { useSections } from '../context/SectionsContext';
 import { Plus, Trash2, PencilLine, Check, X, ShoppingCart } from 'lucide-react';
@@ -174,11 +175,9 @@ export default function PurchasesPage() {
                         />
                       </td>
                       <td className="px-2 py-2">
-                        <input
-                          className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-white text-sm focus:outline-none focus:border-indigo-500"
+                        <PersianDatePicker
                           value={editRow.purchase_date}
-                          onChange={e => setEditRow(r => ({ ...r, purchase_date: e.target.value }))}
-                          placeholder="مثال: ۱۴۰۳/۰۳/۱۵"
+                          onChange={val => setEditRow(r => ({ ...r, purchase_date: val }))}
                         />
                       </td>
                       <td className="px-2 py-2">

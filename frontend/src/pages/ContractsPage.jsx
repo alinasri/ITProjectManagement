@@ -4,6 +4,7 @@ import PageHeader from '../components/PageHeader';
 import StatCard from '../components/StatCard';
 import ConfirmDialog from '../components/ConfirmDialog';
 import MultiSelect from '../components/MultiSelect';
+import PersianDatePicker from '../components/PersianDatePicker';
 import { contracts as contractsApi } from '../api';
 import { useSections } from '../context/SectionsContext';
 import { Plus, Trash2, PencilLine, Check, X, FileSignature } from 'lucide-react';
@@ -168,19 +169,15 @@ export default function ContractsPage() {
                         />
                       </td>
                       <td className="px-2 py-2">
-                        <input
-                          className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-white text-sm focus:outline-none focus:border-indigo-500"
+                        <PersianDatePicker
                           value={editRow.start_date}
-                          onChange={e => setEditRow(r => ({ ...r, start_date: e.target.value }))}
-                          placeholder="مثال: ۱۴۰۳/۰۱/۰۱"
+                          onChange={val => setEditRow(r => ({ ...r, start_date: val }))}
                         />
                       </td>
                       <td className="px-2 py-2">
-                        <input
-                          className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-white text-sm focus:outline-none focus:border-indigo-500"
+                        <PersianDatePicker
                           value={editRow.end_date}
-                          onChange={e => setEditRow(r => ({ ...r, end_date: e.target.value }))}
-                          placeholder="مثال: ۱۴۰۴/۰۱/۰۱"
+                          onChange={val => setEditRow(r => ({ ...r, end_date: val }))}
                         />
                       </td>
                       <td className="px-2 py-2">

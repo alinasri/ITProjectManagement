@@ -4,6 +4,7 @@ import PageHeader from '../components/PageHeader';
 import StatCard from '../components/StatCard';
 import ConfirmDialog from '../components/ConfirmDialog';
 import MultiSelect from '../components/MultiSelect';
+import PersianDatePicker from '../components/PersianDatePicker';
 import { tenders as tendersApi } from '../api';
 import { useSections } from '../context/SectionsContext';
 import { Plus, Trash2, PencilLine, Check, X, Gavel } from 'lucide-react';
@@ -167,11 +168,9 @@ export default function TendersPage() {
                         />
                       </td>
                       <td className="px-2 py-2">
-                        <input
-                          className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-white text-sm focus:outline-none focus:border-indigo-500"
+                        <PersianDatePicker
                           value={editRow.deadline}
-                          onChange={e => setEditRow(r => ({ ...r, deadline: e.target.value }))}
-                          placeholder="مثال: ۱۴۰۳/۰۳/۱۵"
+                          onChange={val => setEditRow(r => ({ ...r, deadline: val }))}
                         />
                       </td>
                       <td className="px-2 py-2">
