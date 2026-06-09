@@ -1,6 +1,7 @@
 const express = require('express');
 const db = require('../db/schema');
 const { requireAuth, requireRole } = require('../middleware/auth');
+const { recordStatusChange } = require('../db/helpers');
 
 const router = express.Router();
 
@@ -22,7 +23,8 @@ function setSections(id, sectionIds) {
 }
 
 router.get('/', requireAuth, requireRole('super_admin', 'it_head', 'tender_admin'), (req, res) => {
-  const rows = db.prepare('SELECT * FROM tenders ORDER BY id').all();
+  const showArchived = req.query.archived === '1' ? 1 : 0;
+  const rows = db.prepare('SELECT * FROM tenders WHERE is_archived = ? ORDER BY id').all(showArchived);
   res.json(enrichTenders(rows));
 });
 
@@ -30,16 +32,29 @@ router.post('/', requireAuth, requireRole('super_admin', 'tender_admin'), (req, 
   const { title, status, estimated_amount, deadline, winner, description, section_ids } = req.body;
   if (!title?.trim()) return res.status(400).json({ error: 'Title required' });
 
+  const initialStatus = status || 'open';
   const result = db.prepare(
     `INSERT INTO tenders (title, status, estimated_amount, deadline, winner, description)
      VALUES (?, ?, ?, ?, ?, ?)`
   ).run(
-    title.trim(), status || 'open', estimated_amount || '', deadline || '', winner || '', description || ''
+    title.trim(), initialStatus, estimated_amount || '', deadline || '', winner || '', description || ''
   );
   const id = result.lastInsertRowid;
+  recordStatusChange('tender', id, null, initialStatus, req.user.id);
   if (Array.isArray(section_ids)) setSections(id, section_ids);
   const row = db.prepare('SELECT * FROM tenders WHERE id = ?').get(id);
   res.status(201).json(enrichTenders([row])[0]);
+});
+
+router.get('/:id/history', requireAuth, requireRole('super_admin', 'it_head', 'tender_admin'), (req, res) => {
+  const rows = db.prepare(
+    `SELECT sh.*, u.username as changed_by_username
+     FROM status_history sh
+     LEFT JOIN users u ON u.id = sh.changed_by
+     WHERE sh.entity_type = 'tender' AND sh.entity_id = ?
+     ORDER BY sh.changed_at DESC`
+  ).all(req.params.id);
+  res.json(rows);
 });
 
 router.put('/:id', requireAuth, requireRole('super_admin', 'tender_admin'), (req, res) => {
@@ -47,21 +62,31 @@ router.put('/:id', requireAuth, requireRole('super_admin', 'tender_admin'), (req
   if (!row) return res.status(404).json({ error: 'Not found' });
 
   const { title, status, estimated_amount, deadline, winner, description, section_ids } = req.body;
+  const newStatus = status ?? row.status;
   db.prepare(
     `UPDATE tenders SET title = ?, status = ?, estimated_amount = ?, deadline = ?, winner = ?, description = ?, updated_at = datetime('now') WHERE id = ?`
   ).run(
     title ?? row.title,
-    status ?? row.status,
+    newStatus,
     estimated_amount ?? row.estimated_amount,
     deadline ?? row.deadline,
     winner ?? row.winner,
     description ?? row.description,
     req.params.id
   );
+  recordStatusChange('tender', req.params.id, row.status, newStatus, req.user.id);
 
   if (Array.isArray(section_ids)) setSections(req.params.id, section_ids);
 
   res.json(enrichTenders([db.prepare('SELECT * FROM tenders WHERE id = ?').get(req.params.id)])[0]);
+});
+
+router.patch('/:id/archive', requireAuth, requireRole('super_admin', 'tender_admin'), (req, res) => {
+  const row = db.prepare('SELECT * FROM tenders WHERE id = ?').get(req.params.id);
+  if (!row) return res.status(404).json({ error: 'Not found' });
+  const archive = req.body.archive === false ? 0 : 1;
+  db.prepare(`UPDATE tenders SET is_archived = ?, updated_at = datetime('now') WHERE id = ?`).run(archive, req.params.id);
+  res.json({ ok: true, is_archived: archive });
 });
 
 router.delete('/:id', requireAuth, requireRole('super_admin', 'tender_admin'), (req, res) => {

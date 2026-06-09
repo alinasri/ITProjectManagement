@@ -189,6 +189,27 @@ if (!usersTableSql.includes('purchase_admin')) {
   `);
 }
 
+// Status history audit trail
+db.exec(`
+  CREATE TABLE IF NOT EXISTS status_history (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    entity_type TEXT NOT NULL CHECK(entity_type IN ('project','ongoing_task','purchase','tender','contract')),
+    entity_id   INTEGER NOT NULL,
+    from_status TEXT,
+    to_status   TEXT NOT NULL,
+    changed_by  INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    changed_at  TEXT DEFAULT (datetime('now'))
+  )
+`);
+db.exec(`CREATE INDEX IF NOT EXISTS idx_status_history_entity ON status_history(entity_type, entity_id)`);
+
+// Add is_archived column to all entity tables
+for (const table of ['projects', 'ongoing_tasks', 'purchases', 'tenders', 'contracts']) {
+  try {
+    db.exec(`ALTER TABLE ${table} ADD COLUMN is_archived INTEGER NOT NULL DEFAULT 0`);
+  } catch (_) {}
+}
+
 // Seed initial data only once
 const existing = db.prepare('SELECT COUNT(*) as c FROM sections').get();
 if (existing.c === 0) {

@@ -1,6 +1,7 @@
 const express = require('express');
 const db = require('../db/schema');
 const { requireAuth, requireRole } = require('../middleware/auth');
+const { recordStatusChange } = require('../db/helpers');
 
 const router = express.Router();
 
@@ -23,13 +24,14 @@ function setResponsibles(table, fk, id, personnelIds) {
 
 router.get('/', requireAuth, (req, res) => {
   const { section_id } = req.query;
+  const showArchived = req.query.archived === '1' ? 1 : 0;
   let tasks;
   if (req.user.role === 'section_head') {
-    tasks = db.prepare('SELECT * FROM ongoing_tasks WHERE section_id = ? ORDER BY id').all(req.user.section_id);
+    tasks = db.prepare('SELECT * FROM ongoing_tasks WHERE section_id = ? AND is_archived = ? ORDER BY id').all(req.user.section_id, showArchived);
   } else if (section_id) {
-    tasks = db.prepare('SELECT * FROM ongoing_tasks WHERE section_id = ? ORDER BY id').all(section_id);
+    tasks = db.prepare('SELECT * FROM ongoing_tasks WHERE section_id = ? AND is_archived = ? ORDER BY id').all(section_id, showArchived);
   } else {
-    tasks = db.prepare('SELECT * FROM ongoing_tasks ORDER BY section_id, id').all();
+    tasks = db.prepare('SELECT * FROM ongoing_tasks WHERE is_archived = ? ORDER BY section_id, id').all(showArchived);
   }
   res.json(enrichTasks(tasks));
 });
@@ -40,14 +42,27 @@ router.post('/', requireAuth, requireRole('super_admin', 'section_head'), (req, 
   const sectionId = req.user.role === 'section_head' ? req.user.section_id : section_id;
   if (!sectionId) return res.status(400).json({ error: 'section_id required' });
 
+  const initialStatus = status || 'in_progress';
   const result = db.prepare(
     `INSERT INTO ongoing_tasks (title, section_id, status, note)
      VALUES (?, ?, ?, ?)`
-  ).run(title.trim(), sectionId, status || 'in_progress', note || '');
+  ).run(title.trim(), sectionId, initialStatus, note || '');
   const taskId = result.lastInsertRowid;
+  recordStatusChange('ongoing_task', taskId, null, initialStatus, req.user.id);
   if (Array.isArray(responsible_ids)) setResponsibles('ongoing_task_responsibles', 'task_id', taskId, responsible_ids);
   const task = db.prepare('SELECT * FROM ongoing_tasks WHERE id = ?').get(taskId);
   res.status(201).json(enrichTasks([task])[0]);
+});
+
+router.get('/:id/history', requireAuth, (req, res) => {
+  const rows = db.prepare(
+    `SELECT sh.*, u.username as changed_by_username
+     FROM status_history sh
+     LEFT JOIN users u ON u.id = sh.changed_by
+     WHERE sh.entity_type = 'ongoing_task' AND sh.entity_id = ?
+     ORDER BY sh.changed_at DESC`
+  ).all(req.params.id);
+  res.json(rows);
 });
 
 router.put('/:id', requireAuth, requireRole('super_admin', 'section_head'), (req, res) => {
@@ -58,18 +73,31 @@ router.put('/:id', requireAuth, requireRole('super_admin', 'section_head'), (req
   }
 
   const { title, responsible_ids, status, note } = req.body;
+  const newStatus = status ?? task.status;
   db.prepare(
     `UPDATE ongoing_tasks SET title = ?, status = ?, note = ?, updated_at = datetime('now') WHERE id = ?`
   ).run(
     title ?? task.title,
-    status ?? task.status,
+    newStatus,
     note ?? task.note,
     req.params.id
   );
+  recordStatusChange('ongoing_task', req.params.id, task.status, newStatus, req.user.id);
 
   if (Array.isArray(responsible_ids)) setResponsibles('ongoing_task_responsibles', 'task_id', req.params.id, responsible_ids);
 
   res.json(enrichTasks([db.prepare('SELECT * FROM ongoing_tasks WHERE id = ?').get(req.params.id)])[0]);
+});
+
+router.patch('/:id/archive', requireAuth, requireRole('super_admin', 'section_head'), (req, res) => {
+  const task = db.prepare('SELECT * FROM ongoing_tasks WHERE id = ?').get(req.params.id);
+  if (!task) return res.status(404).json({ error: 'Not found' });
+  if (req.user.role === 'section_head' && task.section_id !== req.user.section_id) {
+    return res.status(403).json({ error: 'Forbidden' });
+  }
+  const archive = req.body.archive === false ? 0 : 1;
+  db.prepare(`UPDATE ongoing_tasks SET is_archived = ?, updated_at = datetime('now') WHERE id = ?`).run(archive, req.params.id);
+  res.json({ ok: true, is_archived: archive });
 });
 
 router.delete('/:id', requireAuth, requireRole('super_admin', 'section_head'), (req, res) => {

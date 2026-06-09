@@ -5,9 +5,11 @@ import StatCard from '../components/StatCard';
 import ConfirmDialog from '../components/ConfirmDialog';
 import MultiSelect from '../components/MultiSelect';
 import PersianDatePicker from '../components/PersianDatePicker';
+import Modal from '../components/Modal';
+import StatusHistoryTimeline from '../components/StatusHistoryTimeline';
 import { purchases as purchasesApi } from '../api';
 import { useSections } from '../context/SectionsContext';
-import { Plus, Trash2, PencilLine, Check, X, ShoppingCart } from 'lucide-react';
+import { Plus, Trash2, PencilLine, Check, X, ShoppingCart, Archive, History } from 'lucide-react';
 
 const STATUS_CONFIG = {
   pending:   { label: 'در انتظار',    cls: 'bg-gray-700/60 text-gray-300' },
@@ -30,6 +32,7 @@ export default function PurchasesPage() {
 
   const [list, setList] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [showArchived, setShowArchived] = useState(false);
 
   const [editingId, setEditingId] = useState(null);
   const [editRow, setEditRow] = useState({});
@@ -38,16 +41,24 @@ export default function PurchasesPage() {
   const [deleteLoading, setDeleteLoading] = useState(false);
   const [addRowLoading, setAddRowLoading] = useState(false);
 
+  const [historyTarget, setHistoryTarget] = useState(null);
+  const [historyRows, setHistoryRows] = useState([]);
+
   const fetchAll = useCallback(async () => {
     try {
-      const r = await purchasesApi.list();
+      const r = await purchasesApi.list(showArchived ? { archived: 1 } : {});
       setList(r.data);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [showArchived]);
 
   useEffect(() => { fetchAll(); }, [fetchAll]);
+
+  useEffect(() => {
+    if (!historyTarget) return;
+    purchasesApi.getHistory(historyTarget).then(r => setHistoryRows(r.data));
+  }, [historyTarget]);
 
   const startEdit = (row) => {
     setEditingId(row.id);
@@ -91,6 +102,11 @@ export default function PurchasesPage() {
     }
   };
 
+  const handleArchive = async (id, archive) => {
+    await purchasesApi.archive(id, archive);
+    fetchAll();
+  };
+
   if (loading) return (
     <div className="flex items-center justify-center h-64">
       <div className="w-8 h-8 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin" />
@@ -104,16 +120,31 @@ export default function PurchasesPage() {
       <PageHeader
         title="خریدها"
         subtitle={`${list.length} مورد`}
-        action={canEdit && (
-          <button
-            onClick={addRow}
-            disabled={addRowLoading}
-            className="flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-sm font-medium transition-colors"
-          >
-            <Plus className="w-4 h-4" />
-            خرید جدید
-          </button>
-        )}
+        action={
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setShowArchived(v => !v)}
+              className={`flex items-center gap-2 px-3 py-2 rounded-xl text-sm border transition-colors ${
+                showArchived
+                  ? 'bg-amber-900/40 border-amber-700 text-amber-300'
+                  : 'bg-gray-800 border-gray-700 text-gray-400 hover:text-gray-200'
+              }`}
+            >
+              <Archive className="w-4 h-4" />
+              {showArchived ? 'نمایش فعال‌ها' : 'آرشیو'}
+            </button>
+            {canEdit && (
+              <button
+                onClick={addRow}
+                disabled={addRowLoading}
+                className="flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-sm font-medium transition-colors"
+              >
+                <Plus className="w-4 h-4" />
+                خرید جدید
+              </button>
+            )}
+          </div>
+        }
       />
 
       <div className="grid grid-cols-2 lg:grid-cols-5 gap-4 mb-8">
@@ -134,12 +165,12 @@ export default function PurchasesPage() {
                 <th className="px-4 py-3 text-right text-gray-400 font-medium min-w-32">مبلغ</th>
                 <th className="px-4 py-3 text-right text-gray-400 font-medium min-w-32">تاریخ خرید</th>
                 <th className="px-4 py-3 text-right text-gray-400 font-medium min-w-48">بخش‌های مرتبط</th>
-                {canEdit && <th className="px-4 py-3 w-20" />}
+                {canEdit && <th className="px-4 py-3 w-24" />}
               </tr>
             </thead>
             <tbody>
               {list.map((p, idx) => (
-                <tr key={p.id} className="border-b border-gray-800/60 hover:bg-gray-800/30 transition-colors group">
+                <tr key={p.id} className={`border-b border-gray-800/60 hover:bg-gray-800/30 transition-colors group ${p.is_archived ? 'opacity-60' : ''}`}>
                   <td className="px-4 py-3 text-gray-500 text-center">{idx + 1}</td>
 
                   {editingId === p.id ? (
@@ -210,6 +241,20 @@ export default function PurchasesPage() {
                       {canEdit && (
                         <td className="px-4 py-3">
                           <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <button
+                              onClick={() => setHistoryTarget(p.id)}
+                              className="p-1.5 text-gray-500 hover:text-purple-400 hover:bg-purple-900/30 rounded-lg transition-colors"
+                              title="تاریخچه وضعیت"
+                            >
+                              <History className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              onClick={() => handleArchive(p.id, !p.is_archived)}
+                              className="p-1.5 text-gray-500 hover:text-amber-400 hover:bg-amber-900/30 rounded-lg transition-colors"
+                              title={p.is_archived ? 'بازگردانی' : 'آرشیو'}
+                            >
+                              <Archive className="w-3.5 h-3.5" />
+                            </button>
                             <button onClick={() => startEdit(p)} className="p-1.5 text-gray-500 hover:text-indigo-400 hover:bg-indigo-900/30 rounded-lg transition-colors">
                               <PencilLine className="w-3.5 h-3.5" />
                             </button>
@@ -228,7 +273,7 @@ export default function PurchasesPage() {
                   <td colSpan={colCount} className="px-4 py-12 text-center text-gray-600">
                     <div className="flex flex-col items-center gap-2">
                       <ShoppingCart className="w-8 h-8 text-gray-700" />
-                      هیچ خریدی ثبت نشده است
+                      {showArchived ? 'هیچ خرید آرشیوشده‌ای وجود ندارد' : 'هیچ خریدی ثبت نشده است'}
                     </div>
                   </td>
                 </tr>
@@ -245,6 +290,15 @@ export default function PurchasesPage() {
         loading={deleteLoading}
         message="آیا از حذف این خرید اطمینان دارید؟ این عملیات قابل بازگشت نیست."
       />
+
+      <Modal
+        open={!!historyTarget}
+        onClose={() => { setHistoryTarget(null); setHistoryRows([]); }}
+        title="تاریخچه وضعیت"
+        width="max-w-md"
+      >
+        <StatusHistoryTimeline history={historyRows} statusConfig={STATUS_CONFIG} />
+      </Modal>
     </div>
   );
 }

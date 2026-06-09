@@ -3,13 +3,14 @@ import { Routes, Route, NavLink, useParams, useNavigate } from 'react-router-dom
 import { useAuth } from '../context/AuthContext';
 import PageHeader from '../components/PageHeader';
 import StatCard from '../components/StatCard';
-import StatusBadge, { STATUS_OPTIONS } from '../components/StatusBadge';
+import StatusBadge, { STATUS_OPTIONS, STATUS_CONFIG as PROJECT_STATUS_CONFIG } from '../components/StatusBadge';
 import Modal from '../components/Modal';
 import ConfirmDialog from '../components/ConfirmDialog';
 import MultiSelect from '../components/MultiSelect';
+import StatusHistoryTimeline from '../components/StatusHistoryTimeline';
 import { projects as projectsApi, personnel as personnelApi, customColumns as colsApi, ongoingTasks as ongoingTasksApi } from '../api';
 import { useSections } from '../context/SectionsContext';
-import { Plus, Trash2, PencilLine, Users, FolderKanban, Columns, Check, X, ListChecks } from 'lucide-react';
+import { Plus, Trash2, PencilLine, Users, FolderKanban, Columns, Check, X, ListChecks, Archive, History } from 'lucide-react';
 
 export default function SectionDashboard() {
   const { sectionId } = useParams();
@@ -26,8 +27,6 @@ export default function SectionDashboard() {
 }
 
 // ── Section Sub-Tabs ──────────────────────────────────────────────────────────
-// Lets every role (not just section heads via the sidebar) reach the
-// Personnel and Ongoing Tasks views for a section.
 
 function SectionTabs({ sectionId }) {
   const base = `/section/${sectionId}`;
@@ -67,6 +66,7 @@ function ProjectsTab() {
   const [personnel, setPersonnel] = useState([]);
   const [columns, setColumns] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [showArchived, setShowArchived] = useState(false);
 
   const [editingId, setEditingId] = useState(null);
   const [editRow, setEditRow] = useState({});
@@ -80,10 +80,15 @@ function ProjectsTab() {
 
   const [addRowLoading, setAddRowLoading] = useState(false);
 
+  const [historyTarget, setHistoryTarget] = useState(null);
+  const [historyRows, setHistoryRows] = useState([]);
+
   const fetchAll = useCallback(async () => {
     try {
+      const params = { section_id: sectionId };
+      if (showArchived) params.archived = 1;
       const [pRes, perRes, colRes] = await Promise.all([
-        projectsApi.list(sectionId),
+        projectsApi.list(params),
         personnelApi.list(sectionId),
         colsApi.list(sectionId),
       ]);
@@ -93,9 +98,14 @@ function ProjectsTab() {
     } finally {
       setLoading(false);
     }
-  }, [sectionId]);
+  }, [sectionId, showArchived]);
 
   useEffect(() => { fetchAll(); }, [fetchAll]);
+
+  useEffect(() => {
+    if (!historyTarget) return;
+    projectsApi.getHistory(historyTarget).then(r => setHistoryRows(r.data));
+  }, [historyTarget]);
 
   const stats = {
     total: projects.length,
@@ -153,6 +163,11 @@ function ProjectsTab() {
     }
   };
 
+  const handleArchive = async (id, archive) => {
+    await projectsApi.archive(id, archive);
+    fetchAll();
+  };
+
   const addColumn = async (e) => {
     e.preventDefault();
     if (!newColName.trim()) return;
@@ -183,25 +198,40 @@ function ProjectsTab() {
       <PageHeader
         title={section?.name || 'پروژه‌ها'}
         subtitle={`${stats.total} پروژه`}
-        action={canEdit && (
+        action={
           <div className="flex gap-2">
             <button
-              onClick={() => setAddColOpen(true)}
-              className="flex items-center gap-2 px-3 py-2 bg-gray-800 hover:bg-gray-700 text-gray-300 rounded-xl text-sm transition-colors border border-gray-700"
+              onClick={() => setShowArchived(v => !v)}
+              className={`flex items-center gap-2 px-3 py-2 rounded-xl text-sm border transition-colors ${
+                showArchived
+                  ? 'bg-amber-900/40 border-amber-700 text-amber-300'
+                  : 'bg-gray-800 border-gray-700 text-gray-400 hover:text-gray-200'
+              }`}
             >
-              <Columns className="w-4 h-4" />
-              افزودن ستون
+              <Archive className="w-4 h-4" />
+              {showArchived ? 'نمایش فعال‌ها' : 'آرشیو'}
             </button>
-            <button
-              onClick={addRow}
-              disabled={addRowLoading}
-              className="flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-sm font-medium transition-colors"
-            >
-              <Plus className="w-4 h-4" />
-              پروژه جدید
-            </button>
+            {canEdit && (
+              <>
+                <button
+                  onClick={() => setAddColOpen(true)}
+                  className="flex items-center gap-2 px-3 py-2 bg-gray-800 hover:bg-gray-700 text-gray-300 rounded-xl text-sm transition-colors border border-gray-700"
+                >
+                  <Columns className="w-4 h-4" />
+                  افزودن ستون
+                </button>
+                <button
+                  onClick={addRow}
+                  disabled={addRowLoading}
+                  className="flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-sm font-medium transition-colors"
+                >
+                  <Plus className="w-4 h-4" />
+                  پروژه جدید
+                </button>
+              </>
+            )}
           </div>
-        )}
+        }
       />
 
       {/* Stat Cards */}
@@ -236,12 +266,12 @@ function ProjectsTab() {
                     </div>
                   </th>
                 ))}
-                {canEdit && <th className="px-4 py-3 w-20" />}
+                {canEdit && <th className="px-4 py-3 w-24" />}
               </tr>
             </thead>
             <tbody>
               {projects.map((p, idx) => (
-                <tr key={p.id} className="border-b border-gray-800/60 hover:bg-gray-800/30 transition-colors group">
+                <tr key={p.id} className={`border-b border-gray-800/60 hover:bg-gray-800/30 transition-colors group ${p.is_archived ? 'opacity-60' : ''}`}>
                   <td className="px-4 py-3 text-gray-500 text-center">{idx + 1}</td>
 
                   {editingId === p.id ? (
@@ -325,6 +355,20 @@ function ProjectsTab() {
                       {canEdit && (
                         <td className="px-4 py-3">
                           <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <button
+                              onClick={() => setHistoryTarget(p.id)}
+                              className="p-1.5 text-gray-500 hover:text-purple-400 hover:bg-purple-900/30 rounded-lg transition-colors"
+                              title="تاریخچه وضعیت"
+                            >
+                              <History className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              onClick={() => handleArchive(p.id, !p.is_archived)}
+                              className="p-1.5 text-gray-500 hover:text-amber-400 hover:bg-amber-900/30 rounded-lg transition-colors"
+                              title={p.is_archived ? 'بازگردانی' : 'آرشیو'}
+                            >
+                              <Archive className="w-3.5 h-3.5" />
+                            </button>
                             <button onClick={() => startEdit(p)} className="p-1.5 text-gray-500 hover:text-indigo-400 hover:bg-indigo-900/30 rounded-lg transition-colors">
                               <PencilLine className="w-3.5 h-3.5" />
                             </button>
@@ -341,7 +385,7 @@ function ProjectsTab() {
               {projects.length === 0 && (
                 <tr>
                   <td colSpan={7 + columns.length} className="px-4 py-12 text-center text-gray-600">
-                    هیچ پروژه‌ای ثبت نشده است
+                    {showArchived ? 'هیچ پروژه آرشیوشده‌ای وجود ندارد' : 'هیچ پروژه‌ای ثبت نشده است'}
                   </td>
                 </tr>
               )}
@@ -379,6 +423,15 @@ function ProjectsTab() {
         loading={deleteLoading}
         message="آیا از حذف این پروژه اطمینان دارید؟ این عملیات قابل بازگشت نیست."
       />
+
+      <Modal
+        open={!!historyTarget}
+        onClose={() => { setHistoryTarget(null); setHistoryRows([]); }}
+        title="تاریخچه وضعیت"
+        width="max-w-md"
+      >
+        <StatusHistoryTimeline history={historyRows} statusConfig={PROJECT_STATUS_CONFIG} />
+      </Modal>
     </div>
   );
 }
@@ -519,6 +572,7 @@ function OngoingTasksTab() {
   const [tasks, setTasks] = useState([]);
   const [personnel, setPersonnel] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [showArchived, setShowArchived] = useState(false);
 
   const [editingId, setEditingId] = useState(null);
   const [editRow, setEditRow] = useState({});
@@ -528,10 +582,15 @@ function OngoingTasksTab() {
 
   const [addRowLoading, setAddRowLoading] = useState(false);
 
+  const [historyTarget, setHistoryTarget] = useState(null);
+  const [historyRows, setHistoryRows] = useState([]);
+
   const fetchAll = useCallback(async () => {
     try {
+      const params = { section_id: sectionId };
+      if (showArchived) params.archived = 1;
       const [tRes, perRes] = await Promise.all([
-        ongoingTasksApi.list(sectionId),
+        ongoingTasksApi.list(params),
         personnelApi.list(sectionId),
       ]);
       setTasks(tRes.data);
@@ -539,9 +598,14 @@ function OngoingTasksTab() {
     } finally {
       setLoading(false);
     }
-  }, [sectionId]);
+  }, [sectionId, showArchived]);
 
   useEffect(() => { fetchAll(); }, [fetchAll]);
+
+  useEffect(() => {
+    if (!historyTarget) return;
+    ongoingTasksApi.getHistory(historyTarget).then(r => setHistoryRows(r.data));
+  }, [historyTarget]);
 
   const startEdit = (task) => {
     setEditingId(task.id);
@@ -582,6 +646,11 @@ function OngoingTasksTab() {
     }
   };
 
+  const handleArchive = async (id, archive) => {
+    await ongoingTasksApi.archive(id, archive);
+    fetchAll();
+  };
+
   if (loading) return (
     <div className="flex items-center justify-center h-64">
       <div className="w-8 h-8 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin" />
@@ -593,16 +662,31 @@ function OngoingTasksTab() {
       <PageHeader
         title="وظایف جاری"
         subtitle={`${tasks.length} وظیفه`}
-        action={canEdit && (
-          <button
-            onClick={addRow}
-            disabled={addRowLoading}
-            className="flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-sm font-medium transition-colors"
-          >
-            <Plus className="w-4 h-4" />
-            وظیفه جدید
-          </button>
-        )}
+        action={
+          <div className="flex gap-2">
+            <button
+              onClick={() => setShowArchived(v => !v)}
+              className={`flex items-center gap-2 px-3 py-2 rounded-xl text-sm border transition-colors ${
+                showArchived
+                  ? 'bg-amber-900/40 border-amber-700 text-amber-300'
+                  : 'bg-gray-800 border-gray-700 text-gray-400 hover:text-gray-200'
+              }`}
+            >
+              <Archive className="w-4 h-4" />
+              {showArchived ? 'نمایش فعال‌ها' : 'آرشیو'}
+            </button>
+            {canEdit && (
+              <button
+                onClick={addRow}
+                disabled={addRowLoading}
+                className="flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-sm font-medium transition-colors"
+              >
+                <Plus className="w-4 h-4" />
+                وظیفه جدید
+              </button>
+            )}
+          </div>
+        }
       />
 
       <div className="bg-gray-900 border border-gray-800 rounded-2xl overflow-hidden">
@@ -615,12 +699,12 @@ function OngoingTasksTab() {
                 <th className="px-4 py-3 text-right text-gray-400 font-medium min-w-36">مسئول</th>
                 <th className="px-4 py-3 text-right text-gray-400 font-medium min-w-32">وضعیت</th>
                 <th className="px-4 py-3 text-right text-gray-400 font-medium min-w-48">یادداشت</th>
-                {canEdit && <th className="px-4 py-3 w-20" />}
+                {canEdit && <th className="px-4 py-3 w-24" />}
               </tr>
             </thead>
             <tbody>
               {tasks.map((t, idx) => (
-                <tr key={t.id} className="border-b border-gray-800/60 hover:bg-gray-800/30 transition-colors group">
+                <tr key={t.id} className={`border-b border-gray-800/60 hover:bg-gray-800/30 transition-colors group ${t.is_archived ? 'opacity-60' : ''}`}>
                   <td className="px-4 py-3 text-gray-500 text-center">{idx + 1}</td>
 
                   {editingId === t.id ? (
@@ -680,6 +764,20 @@ function OngoingTasksTab() {
                       {canEdit && (
                         <td className="px-4 py-3">
                           <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <button
+                              onClick={() => setHistoryTarget(t.id)}
+                              className="p-1.5 text-gray-500 hover:text-purple-400 hover:bg-purple-900/30 rounded-lg transition-colors"
+                              title="تاریخچه وضعیت"
+                            >
+                              <History className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              onClick={() => handleArchive(t.id, !t.is_archived)}
+                              className="p-1.5 text-gray-500 hover:text-amber-400 hover:bg-amber-900/30 rounded-lg transition-colors"
+                              title={t.is_archived ? 'بازگردانی' : 'آرشیو'}
+                            >
+                              <Archive className="w-3.5 h-3.5" />
+                            </button>
                             <button onClick={() => startEdit(t)} className="p-1.5 text-gray-500 hover:text-indigo-400 hover:bg-indigo-900/30 rounded-lg transition-colors">
                               <PencilLine className="w-3.5 h-3.5" />
                             </button>
@@ -696,7 +794,7 @@ function OngoingTasksTab() {
               {tasks.length === 0 && (
                 <tr>
                   <td colSpan={canEdit ? 6 : 5} className="px-4 py-12 text-center text-gray-600">
-                    هیچ وظیفه جاری ثبت نشده است
+                    {showArchived ? 'هیچ وظیفه آرشیوشده‌ای وجود ندارد' : 'هیچ وظیفه جاری ثبت نشده است'}
                   </td>
                 </tr>
               )}
@@ -712,6 +810,15 @@ function OngoingTasksTab() {
         loading={deleteLoading}
         message="آیا از حذف این وظیفه اطمینان دارید؟ این عملیات قابل بازگشت نیست."
       />
+
+      <Modal
+        open={!!historyTarget}
+        onClose={() => { setHistoryTarget(null); setHistoryRows([]); }}
+        title="تاریخچه وضعیت"
+        width="max-w-md"
+      >
+        <StatusHistoryTimeline history={historyRows} statusConfig={TASK_STATUS_CONFIG} />
+      </Modal>
     </div>
   );
 }

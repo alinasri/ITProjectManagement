@@ -1,6 +1,7 @@
 const express = require('express');
 const db = require('../db/schema');
 const { requireAuth, requireRole } = require('../middleware/auth');
+const { recordStatusChange } = require('../db/helpers');
 
 const router = express.Router();
 
@@ -22,7 +23,8 @@ function setSections(id, sectionIds) {
 }
 
 router.get('/', requireAuth, requireRole('super_admin', 'it_head', 'contract_admin'), (req, res) => {
-  const rows = db.prepare('SELECT * FROM contracts ORDER BY id').all();
+  const showArchived = req.query.archived === '1' ? 1 : 0;
+  const rows = db.prepare('SELECT * FROM contracts WHERE is_archived = ? ORDER BY id').all(showArchived);
   res.json(enrichContracts(rows));
 });
 
@@ -30,16 +32,29 @@ router.post('/', requireAuth, requireRole('super_admin', 'contract_admin'), (req
   const { title, status, counterparty, start_date, end_date, amount, description, section_ids } = req.body;
   if (!title?.trim()) return res.status(400).json({ error: 'Title required' });
 
+  const initialStatus = status || 'active';
   const result = db.prepare(
     `INSERT INTO contracts (title, status, counterparty, start_date, end_date, amount, description)
      VALUES (?, ?, ?, ?, ?, ?, ?)`
   ).run(
-    title.trim(), status || 'active', counterparty || '', start_date || '', end_date || '', amount || '', description || ''
+    title.trim(), initialStatus, counterparty || '', start_date || '', end_date || '', amount || '', description || ''
   );
   const id = result.lastInsertRowid;
+  recordStatusChange('contract', id, null, initialStatus, req.user.id);
   if (Array.isArray(section_ids)) setSections(id, section_ids);
   const row = db.prepare('SELECT * FROM contracts WHERE id = ?').get(id);
   res.status(201).json(enrichContracts([row])[0]);
+});
+
+router.get('/:id/history', requireAuth, requireRole('super_admin', 'it_head', 'contract_admin'), (req, res) => {
+  const rows = db.prepare(
+    `SELECT sh.*, u.username as changed_by_username
+     FROM status_history sh
+     LEFT JOIN users u ON u.id = sh.changed_by
+     WHERE sh.entity_type = 'contract' AND sh.entity_id = ?
+     ORDER BY sh.changed_at DESC`
+  ).all(req.params.id);
+  res.json(rows);
 });
 
 router.put('/:id', requireAuth, requireRole('super_admin', 'contract_admin'), (req, res) => {
@@ -47,11 +62,12 @@ router.put('/:id', requireAuth, requireRole('super_admin', 'contract_admin'), (r
   if (!row) return res.status(404).json({ error: 'Not found' });
 
   const { title, status, counterparty, start_date, end_date, amount, description, section_ids } = req.body;
+  const newStatus = status ?? row.status;
   db.prepare(
     `UPDATE contracts SET title = ?, status = ?, counterparty = ?, start_date = ?, end_date = ?, amount = ?, description = ?, updated_at = datetime('now') WHERE id = ?`
   ).run(
     title ?? row.title,
-    status ?? row.status,
+    newStatus,
     counterparty ?? row.counterparty,
     start_date ?? row.start_date,
     end_date ?? row.end_date,
@@ -59,10 +75,19 @@ router.put('/:id', requireAuth, requireRole('super_admin', 'contract_admin'), (r
     description ?? row.description,
     req.params.id
   );
+  recordStatusChange('contract', req.params.id, row.status, newStatus, req.user.id);
 
   if (Array.isArray(section_ids)) setSections(req.params.id, section_ids);
 
   res.json(enrichContracts([db.prepare('SELECT * FROM contracts WHERE id = ?').get(req.params.id)])[0]);
+});
+
+router.patch('/:id/archive', requireAuth, requireRole('super_admin', 'contract_admin'), (req, res) => {
+  const row = db.prepare('SELECT * FROM contracts WHERE id = ?').get(req.params.id);
+  if (!row) return res.status(404).json({ error: 'Not found' });
+  const archive = req.body.archive === false ? 0 : 1;
+  db.prepare(`UPDATE contracts SET is_archived = ?, updated_at = datetime('now') WHERE id = ?`).run(archive, req.params.id);
+  res.json({ ok: true, is_archived: archive });
 });
 
 router.delete('/:id', requireAuth, requireRole('super_admin', 'contract_admin'), (req, res) => {
