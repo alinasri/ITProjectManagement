@@ -152,12 +152,19 @@ function ProjectsTab() {
     }
   };
 
+  const canDelete = (createdAt) => Date.now() - new Date(createdAt + 'Z').getTime() < 10 * 60 * 1000;
+
   const deleteProject = async () => {
     setDeleteLoading(true);
     try {
       await projectsApi.remove(deleteTarget);
       setDeleteTarget(null);
       fetchAll();
+    } catch (err) {
+      if (err.response?.status === 409) {
+        setDeleteTarget(null);
+        fetchAll();
+      }
     } finally {
       setDeleteLoading(false);
     }
@@ -372,9 +379,11 @@ function ProjectsTab() {
                             <button onClick={() => startEdit(p)} className="p-1.5 text-gray-500 hover:text-indigo-400 hover:bg-indigo-900/30 rounded-lg transition-colors">
                               <PencilLine className="w-3.5 h-3.5" />
                             </button>
-                            <button onClick={() => setDeleteTarget(p.id)} className="p-1.5 text-gray-500 hover:text-red-400 hover:bg-red-900/30 rounded-lg transition-colors">
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
+                            {canDelete(p.created_at) && (
+                              <button onClick={() => setDeleteTarget(p.id)} className="p-1.5 text-gray-500 hover:text-red-400 hover:bg-red-900/30 rounded-lg transition-colors">
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            )}
                           </div>
                         </td>
                       )}
@@ -421,7 +430,7 @@ function ProjectsTab() {
         onClose={() => setDeleteTarget(null)}
         onConfirm={deleteProject}
         loading={deleteLoading}
-        message="آیا از حذف این پروژه اطمینان دارید؟ این عملیات قابل بازگشت نیست."
+        message="آیا از حذف این پروژه اطمینان دارید؟ حذف تنها در ۱۰ دقیقه اول پس از ایجاد امکان‌پذیر است."
       />
 
       <Modal
@@ -635,12 +644,19 @@ function OngoingTasksTab() {
     }
   };
 
+  const canDeleteTask = (createdAt) => Date.now() - new Date(createdAt + 'Z').getTime() < 10 * 60 * 1000;
+
   const deleteTask = async () => {
     setDeleteLoading(true);
     try {
       await ongoingTasksApi.remove(deleteTarget);
       setDeleteTarget(null);
       fetchAll();
+    } catch (err) {
+      if (err.response?.status === 409) {
+        setDeleteTarget(null);
+        fetchAll();
+      }
     } finally {
       setDeleteLoading(false);
     }
@@ -781,9 +797,11 @@ function OngoingTasksTab() {
                             <button onClick={() => startEdit(t)} className="p-1.5 text-gray-500 hover:text-indigo-400 hover:bg-indigo-900/30 rounded-lg transition-colors">
                               <PencilLine className="w-3.5 h-3.5" />
                             </button>
-                            <button onClick={() => setDeleteTarget(t.id)} className="p-1.5 text-gray-500 hover:text-red-400 hover:bg-red-900/30 rounded-lg transition-colors">
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
+                            {canDeleteTask(t.created_at) && (
+                              <button onClick={() => setDeleteTarget(t.id)} className="p-1.5 text-gray-500 hover:text-red-400 hover:bg-red-900/30 rounded-lg transition-colors">
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            )}
                           </div>
                         </td>
                       )}
@@ -808,7 +826,7 @@ function OngoingTasksTab() {
         onClose={() => setDeleteTarget(null)}
         onConfirm={deleteTask}
         loading={deleteLoading}
-        message="آیا از حذف این وظیفه اطمینان دارید؟ این عملیات قابل بازگشت نیست."
+        message="آیا از حذف این وظیفه اطمینان دارید؟ حذف تنها در ۱۰ دقیقه اول پس از ایجاد امکان‌پذیر است."
       />
 
       <Modal

@@ -1,6 +1,6 @@
 import { NavLink, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { LogOut, Monitor, Users, FolderKanban, LayoutDashboard, Shield, ChevronLeft, ListChecks, ShoppingCart, Gavel, FileSignature } from 'lucide-react';
+import { LogOut, Monitor, Users, FolderKanban, LayoutDashboard, Shield, ChevronLeft, ListChecks, ShoppingCart, Gavel, FileSignature, KeyRound } from 'lucide-react';
 
 const STATUS_LABELS = {
   not_started: 'شروع نشده',
@@ -137,6 +137,13 @@ export default function Sidebar({ sections = [], activeSectionId }) {
             <p className="text-xs text-gray-500 truncate">{roleLabel}</p>
           </div>
         </div>
+        <NavLink
+          to="/change-password"
+          className="w-full flex items-center gap-2 px-3 py-2 text-gray-400 hover:text-indigo-400 hover:bg-indigo-900/20 rounded-xl transition-colors text-sm"
+        >
+          <KeyRound className="w-4 h-4" />
+          تغییر رمز عبور
+        </NavLink>
         <button
           onClick={handleLogout}
           className="w-full flex items-center gap-2 px-3 py-2 text-gray-400 hover:text-red-400 hover:bg-red-900/20 rounded-xl transition-colors text-sm"

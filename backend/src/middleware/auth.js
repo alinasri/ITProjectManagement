@@ -6,6 +6,11 @@ function requireAuth(req, res, next) {
   if (!token) return res.status(401).json({ error: 'Unauthorized' });
   try {
     req.user = jwt.verify(token, JWT_SECRET);
+    const db = require('../db/schema');
+    const user = db.prepare('SELECT is_active, is_deleted FROM users WHERE id = ?').get(req.user.id);
+    if (!user || user.is_active === 0 || user.is_deleted === 1) {
+      return res.status(401).json({ error: 'Account disabled' });
+    }
     next();
   } catch {
     res.status(401).json({ error: 'Invalid token' });

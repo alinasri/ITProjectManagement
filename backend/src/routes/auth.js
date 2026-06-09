@@ -14,6 +14,9 @@ router.post('/login', (req, res) => {
   if (!user || !bcrypt.compareSync(password, user.password_hash)) {
     return res.status(401).json({ error: 'Invalid username or password' });
   }
+  if (user.is_active === 0) {
+    return res.status(403).json({ error: 'Account disabled' });
+  }
 
   const token = jwt.sign(
     { id: user.id, username: user.username, role: user.role, section_id: user.section_id },

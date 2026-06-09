@@ -91,12 +91,19 @@ export default function TendersPage() {
     }
   };
 
+  const canDelete = (createdAt) => Date.now() - new Date(createdAt + 'Z').getTime() < 10 * 60 * 1000;
+
   const deleteRow = async () => {
     setDeleteLoading(true);
     try {
       await tendersApi.remove(deleteTarget);
       setDeleteTarget(null);
       fetchAll();
+    } catch (err) {
+      if (err.response?.status === 409) {
+        setDeleteTarget(null);
+        fetchAll();
+      }
     } finally {
       setDeleteLoading(false);
     }
@@ -258,9 +265,11 @@ export default function TendersPage() {
                             <button onClick={() => startEdit(t)} className="p-1.5 text-gray-500 hover:text-indigo-400 hover:bg-indigo-900/30 rounded-lg transition-colors">
                               <PencilLine className="w-3.5 h-3.5" />
                             </button>
-                            <button onClick={() => setDeleteTarget(t.id)} className="p-1.5 text-gray-500 hover:text-red-400 hover:bg-red-900/30 rounded-lg transition-colors">
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
+                            {canDelete(t.created_at) && (
+                              <button onClick={() => setDeleteTarget(t.id)} className="p-1.5 text-gray-500 hover:text-red-400 hover:bg-red-900/30 rounded-lg transition-colors">
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            )}
                           </div>
                         </td>
                       )}
@@ -288,7 +297,7 @@ export default function TendersPage() {
         onClose={() => setDeleteTarget(null)}
         onConfirm={deleteRow}
         loading={deleteLoading}
-        message="آیا از حذف این مناقصه اطمینان دارید؟ این عملیات قابل بازگشت نیست."
+        message="آیا از حذف این مناقصه اطمینان دارید؟ حذف تنها در ۱۰ دقیقه اول پس از ایجاد امکان‌پذیر است."
       />
 
       <Modal

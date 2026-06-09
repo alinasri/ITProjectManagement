@@ -26,7 +26,19 @@ router.put('/:id', requireAuth, requireRole('super_admin'), (req, res) => {
 });
 
 router.delete('/:id', requireAuth, requireRole('super_admin'), (req, res) => {
-  db.prepare('DELETE FROM sections WHERE id = ?').run(req.params.id);
+  const id = req.params.id;
+  const section = db.prepare('SELECT id FROM sections WHERE id = ?').get(id);
+  if (!section) return res.status(404).json({ error: 'Not found' });
+
+  const projectCount = db.prepare('SELECT COUNT(*) as c FROM projects WHERE section_id = ?').get(id).c;
+  const taskCount = db.prepare('SELECT COUNT(*) as c FROM ongoing_tasks WHERE section_id = ?').get(id).c;
+  const personnelCount = db.prepare('SELECT COUNT(*) as c FROM personnel WHERE section_id = ?').get(id).c;
+
+  if (projectCount + taskCount + personnelCount > 0) {
+    return res.status(409).json({ error: 'has_data' });
+  }
+
+  db.prepare('DELETE FROM sections WHERE id = ?').run(id);
   res.json({ ok: true });
 });
 

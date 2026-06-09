@@ -30,11 +30,11 @@ router.get('/', requireAuth, (req, res) => {
   const showArchived = req.query.archived === '1' ? 1 : 0;
   let projects;
   if (req.user.role === 'section_head') {
-    projects = db.prepare('SELECT * FROM projects WHERE section_id = ? AND is_archived = ? ORDER BY row_order, id').all(req.user.section_id, showArchived);
+    projects = db.prepare('SELECT * FROM projects WHERE section_id = ? AND is_archived = ? AND is_deleted = 0 ORDER BY row_order, id').all(req.user.section_id, showArchived);
   } else if (section_id) {
-    projects = db.prepare('SELECT * FROM projects WHERE section_id = ? AND is_archived = ? ORDER BY row_order, id').all(section_id, showArchived);
+    projects = db.prepare('SELECT * FROM projects WHERE section_id = ? AND is_archived = ? AND is_deleted = 0 ORDER BY row_order, id').all(section_id, showArchived);
   } else {
-    projects = db.prepare('SELECT * FROM projects WHERE is_archived = ? ORDER BY section_id, row_order, id').all(showArchived);
+    projects = db.prepare('SELECT * FROM projects WHERE is_archived = ? AND is_deleted = 0 ORDER BY section_id, row_order, id').all(showArchived);
   }
   res.json(enrichProjects(projects));
 });
@@ -123,7 +123,11 @@ router.delete('/:id', requireAuth, requireRole('super_admin', 'section_head'), (
   if (req.user.role === 'section_head' && project.section_id !== req.user.section_id) {
     return res.status(403).json({ error: 'Forbidden' });
   }
-  db.prepare('DELETE FROM projects WHERE id = ?').run(req.params.id);
+  const ageMs = Date.now() - new Date(project.created_at + 'Z').getTime();
+  if (ageMs > 10 * 60 * 1000) {
+    return res.status(409).json({ error: 'older_than_10_min' });
+  }
+  db.prepare('UPDATE projects SET is_deleted = 1 WHERE id = ?').run(req.params.id);
   res.json({ ok: true });
 });
 

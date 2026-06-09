@@ -91,12 +91,19 @@ export default function ContractsPage() {
     }
   };
 
+  const canDelete = (createdAt) => Date.now() - new Date(createdAt + 'Z').getTime() < 10 * 60 * 1000;
+
   const deleteRow = async () => {
     setDeleteLoading(true);
     try {
       await contractsApi.remove(deleteTarget);
       setDeleteTarget(null);
       fetchAll();
+    } catch (err) {
+      if (err.response?.status === 409) {
+        setDeleteTarget(null);
+        fetchAll();
+      }
     } finally {
       setDeleteLoading(false);
     }
@@ -266,9 +273,11 @@ export default function ContractsPage() {
                             <button onClick={() => startEdit(c)} className="p-1.5 text-gray-500 hover:text-indigo-400 hover:bg-indigo-900/30 rounded-lg transition-colors">
                               <PencilLine className="w-3.5 h-3.5" />
                             </button>
-                            <button onClick={() => setDeleteTarget(c.id)} className="p-1.5 text-gray-500 hover:text-red-400 hover:bg-red-900/30 rounded-lg transition-colors">
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
+                            {canDelete(c.created_at) && (
+                              <button onClick={() => setDeleteTarget(c.id)} className="p-1.5 text-gray-500 hover:text-red-400 hover:bg-red-900/30 rounded-lg transition-colors">
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            )}
                           </div>
                         </td>
                       )}
@@ -296,7 +305,7 @@ export default function ContractsPage() {
         onClose={() => setDeleteTarget(null)}
         onConfirm={deleteRow}
         loading={deleteLoading}
-        message="آیا از حذف این قرارداد اطمینان دارید؟ این عملیات قابل بازگشت نیست."
+        message="آیا از حذف این قرارداد اطمینان دارید؟ حذف تنها در ۱۰ دقیقه اول پس از ایجاد امکان‌پذیر است."
       />
 
       <Modal

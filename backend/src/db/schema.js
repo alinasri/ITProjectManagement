@@ -210,6 +210,18 @@ for (const table of ['projects', 'ongoing_tasks', 'purchases', 'tenders', 'contr
   } catch (_) {}
 }
 
+// Add is_deleted column to all entity tables (soft delete within 10-minute window)
+for (const table of ['projects', 'ongoing_tasks', 'purchases', 'tenders', 'contracts', 'users']) {
+  try {
+    db.exec(`ALTER TABLE ${table} ADD COLUMN is_deleted INTEGER NOT NULL DEFAULT 0`);
+  } catch (_) {}
+}
+
+// Add is_active column to users (disable/enable without deleting)
+try {
+  db.exec('ALTER TABLE users ADD COLUMN is_active INTEGER NOT NULL DEFAULT 1');
+} catch (_) {}
+
 // Seed initial data only once
 const existing = db.prepare('SELECT COUNT(*) as c FROM sections').get();
 if (existing.c === 0) {

@@ -42,7 +42,11 @@ export default function ChangePasswordPage() {
             <KeyRound className="w-7 h-7 text-white" />
           </div>
           <h1 className="text-xl font-bold text-white mb-1">تغییر رمز عبور</h1>
-          <p className="text-gray-400 text-sm">برای ادامه ابتدا رمز عبور خود را تغییر دهید</p>
+          <p className="text-gray-400 text-sm">
+            {user?.must_change_password
+              ? 'برای ادامه ابتدا رمز عبور خود را تغییر دهید'
+              : 'رمز عبور جدید خود را وارد کنید'}
+          </p>
         </div>
 
         <div className="bg-gray-900 border border-gray-800 rounded-2xl p-8 shadow-2xl">

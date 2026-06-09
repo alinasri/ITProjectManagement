@@ -7,7 +7,7 @@ const router = express.Router();
 
 router.get('/', requireAuth, requireRole('super_admin'), (req, res) => {
   const users = db.prepare(
-    'SELECT id, username, role, section_id, must_change_password, created_at FROM users ORDER BY id'
+    'SELECT id, username, role, section_id, must_change_password, created_at, is_active FROM users WHERE is_deleted = 0 ORDER BY id'
   ).all();
   res.json(users);
 });
@@ -55,11 +55,24 @@ router.put('/:id', requireAuth, requireRole('super_admin'), (req, res) => {
   res.json(db.prepare('SELECT id, username, role, section_id, must_change_password FROM users WHERE id = ?').get(req.params.id));
 });
 
+router.patch('/:id/toggle-active', requireAuth, requireRole('super_admin'), (req, res) => {
+  const user = db.prepare('SELECT * FROM users WHERE id = ?').get(req.params.id);
+  if (!user) return res.status(404).json({ error: 'Not found' });
+  if (user.role === 'super_admin') return res.status(403).json({ error: 'Cannot disable super_admin' });
+  const newActive = user.is_active === 1 ? 0 : 1;
+  db.prepare('UPDATE users SET is_active = ? WHERE id = ?').run(newActive, req.params.id);
+  res.json({ ok: true, is_active: newActive });
+});
+
 router.delete('/:id', requireAuth, requireRole('super_admin'), (req, res) => {
   const user = db.prepare('SELECT * FROM users WHERE id = ?').get(req.params.id);
   if (!user) return res.status(404).json({ error: 'Not found' });
   if (user.role === 'super_admin') return res.status(403).json({ error: 'Cannot delete super_admin' });
-  db.prepare('DELETE FROM users WHERE id = ?').run(req.params.id);
+  const ageMs = Date.now() - new Date(user.created_at + 'Z').getTime();
+  if (ageMs > 10 * 60 * 1000) {
+    return res.status(409).json({ error: 'older_than_10_min' });
+  }
+  db.prepare('UPDATE users SET is_deleted = 1 WHERE id = ?').run(req.params.id);
   res.json({ ok: true });
 });
 

@@ -8,7 +8,7 @@ import ConfirmDialog from '../components/ConfirmDialog';
 import { sections as sectionsApi, users as usersApi, projects as projectsApi } from '../api';
 import { useSections } from '../context/SectionsContext';
 import PasswordInput from '../components/PasswordInput';
-import { Plus, Trash2, PencilLine, Check, X, ChevronLeft } from 'lucide-react';
+import { Plus, Trash2, PencilLine, Check, X, ChevronLeft, Power, PowerOff } from 'lucide-react';
 
 export default function AdminDashboard() {
   return (
@@ -97,6 +97,7 @@ function SectionsTab() {
   const [addLoading, setAddLoading] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [deleteLoading, setDeleteLoading] = useState(false);
+  const [deleteError, setDeleteError] = useState('');
 
   const fetch = useCallback(async () => {
     try { const r = await sectionsApi.list(); setList(r.data); }
@@ -121,8 +122,19 @@ function SectionsTab() {
 
   const deleteSection = async () => {
     setDeleteLoading(true);
-    try { await sectionsApi.remove(deleteTarget); setDeleteTarget(null); fetch(); refreshSections(); }
-    finally { setDeleteLoading(false); }
+    try {
+      await sectionsApi.remove(deleteTarget);
+      setDeleteTarget(null);
+      fetch();
+      refreshSections();
+    } catch (err) {
+      setDeleteTarget(null);
+      if (err.response?.status === 409) {
+        setDeleteError('این بخش دارای پروژه، وظیفه یا پرسنل است و قابل حذف نیست.');
+      }
+    } finally {
+      setDeleteLoading(false);
+    }
   };
 
   if (loading) return <Spinner />;
@@ -138,6 +150,13 @@ function SectionsTab() {
           </button>
         }
       />
+
+      {deleteError && (
+        <div className="mb-4 px-4 py-3 bg-red-900/40 border border-red-700/50 text-red-300 rounded-xl text-sm flex items-center justify-between">
+          <span>{deleteError}</span>
+          <button onClick={() => setDeleteError('')} className="p-1 hover:text-red-100 transition-colors"><X className="w-4 h-4" /></button>
+        </div>
+      )}
 
       <div className="bg-gray-900 border border-gray-800 rounded-2xl overflow-hidden">
         {list.length === 0 ? (
@@ -210,7 +229,7 @@ function SectionsTab() {
         onClose={() => setDeleteTarget(null)}
         onConfirm={deleteSection}
         loading={deleteLoading}
-        message="با حذف بخش، تمام پروژه‌ها و کاربران مرتبط نیز حذف خواهند شد. آیا مطمئنید؟"
+        message="آیا از حذف این بخش اطمینان دارید؟ بخش باید خالی از پروژه، وظیفه و پرسنل باشد."
       />
     </div>
   );
@@ -235,10 +254,27 @@ function UsersTab() {
   }, []);
   useEffect(() => { fetch(); }, [fetch]);
 
+  const canDelete = (createdAt) => Date.now() - new Date(createdAt + 'Z').getTime() < 10 * 60 * 1000;
+
+  const handleToggleActive = async (u) => {
+    await usersApi.toggleActive(u.id);
+    fetch();
+  };
+
   const deleteUser = async () => {
     setDeleteLoading(true);
-    try { await usersApi.remove(deleteTarget); setDeleteTarget(null); fetch(); }
-    finally { setDeleteLoading(false); }
+    try {
+      await usersApi.remove(deleteTarget);
+      setDeleteTarget(null);
+      fetch();
+    } catch (err) {
+      if (err.response?.status === 409) {
+        setDeleteTarget(null);
+        fetch();
+      }
+    } finally {
+      setDeleteLoading(false);
+    }
   };
 
   const roleLabel = {
@@ -275,13 +311,16 @@ function UsersTab() {
             {list.map(u => {
               const sec = sections.find(s => s.id === u.section_id);
               return (
-                <tr key={u.id} className="border-b border-gray-800/60 hover:bg-gray-800/30 group transition-colors">
+                <tr key={u.id} className={`border-b border-gray-800/60 hover:bg-gray-800/30 group transition-colors ${u.is_active === 0 ? 'opacity-50' : ''}`}>
                   <td className="px-5 py-3">
                     <div className="flex items-center gap-3">
                       <div className="w-8 h-8 rounded-full bg-indigo-800/60 flex items-center justify-center text-xs font-bold text-indigo-300">
                         {u.username[0].toUpperCase()}
                       </div>
                       <span className="text-gray-200">{u.username}</span>
+                      {u.is_active === 0 && (
+                        <span className="text-xs px-2 py-0.5 rounded-full bg-red-900/50 text-red-400 border border-red-800/40">غیرفعال</span>
+                      )}
                     </div>
                   </td>
                   <td className="px-5 py-3">
@@ -308,9 +347,19 @@ function UsersTab() {
                         <button onClick={() => setEditTarget(u)} className="p-1.5 text-gray-500 hover:text-indigo-400 hover:bg-indigo-900/30 rounded-lg transition-colors">
                           <PencilLine className="w-4 h-4" />
                         </button>
-                        <button onClick={() => setDeleteTarget(u.id)} className="p-1.5 text-gray-500 hover:text-red-400 hover:bg-red-900/30 rounded-lg transition-colors">
-                          <Trash2 className="w-4 h-4" />
-                        </button>
+                        {canDelete(u.created_at) ? (
+                          <button onClick={() => setDeleteTarget(u.id)} className="p-1.5 text-gray-500 hover:text-red-400 hover:bg-red-900/30 rounded-lg transition-colors" title="حذف">
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        ) : (
+                          <button
+                            onClick={() => handleToggleActive(u)}
+                            className={`p-1.5 rounded-lg transition-colors ${u.is_active === 0 ? 'text-emerald-500 hover:bg-emerald-900/30' : 'text-gray-500 hover:text-red-400 hover:bg-red-900/30'}`}
+                            title={u.is_active === 0 ? 'فعال‌سازی' : 'غیرفعال‌سازی'}
+                          >
+                            {u.is_active === 0 ? <Power className="w-4 h-4" /> : <PowerOff className="w-4 h-4" />}
+                          </button>
+                        )}
                       </div>
                     )}
                   </td>
@@ -339,7 +388,7 @@ function UsersTab() {
         onClose={() => setDeleteTarget(null)}
         onConfirm={deleteUser}
         loading={deleteLoading}
-        message="آیا از حذف این کاربر اطمینان دارید؟"
+        message="آیا از حذف این کاربر اطمینان دارید؟ حذف تنها در ۱۰ دقیقه اول پس از ایجاد امکان‌پذیر است."
       />
     </div>
   );

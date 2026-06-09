@@ -24,7 +24,7 @@ function setSections(id, sectionIds) {
 
 router.get('/', requireAuth, requireRole('super_admin', 'it_head', 'contract_admin'), (req, res) => {
   const showArchived = req.query.archived === '1' ? 1 : 0;
-  const rows = db.prepare('SELECT * FROM contracts WHERE is_archived = ? ORDER BY id').all(showArchived);
+  const rows = db.prepare('SELECT * FROM contracts WHERE is_archived = ? AND is_deleted = 0 ORDER BY id').all(showArchived);
   res.json(enrichContracts(rows));
 });
 
@@ -93,7 +93,11 @@ router.patch('/:id/archive', requireAuth, requireRole('super_admin', 'contract_a
 router.delete('/:id', requireAuth, requireRole('super_admin', 'contract_admin'), (req, res) => {
   const row = db.prepare('SELECT * FROM contracts WHERE id = ?').get(req.params.id);
   if (!row) return res.status(404).json({ error: 'Not found' });
-  db.prepare('DELETE FROM contracts WHERE id = ?').run(req.params.id);
+  const ageMs = Date.now() - new Date(row.created_at + 'Z').getTime();
+  if (ageMs > 10 * 60 * 1000) {
+    return res.status(409).json({ error: 'older_than_10_min' });
+  }
+  db.prepare('UPDATE contracts SET is_deleted = 1 WHERE id = ?').run(req.params.id);
   res.json({ ok: true });
 });
 
