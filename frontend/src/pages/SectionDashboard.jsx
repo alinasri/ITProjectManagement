@@ -503,6 +503,14 @@ function PersonnelTab() {
 
 // ── Ongoing Tasks Tab ─────────────────────────────────────────────────────────
 
+const TASK_STATUS_CONFIG = {
+  pending:     { label: 'در انتظار',    cls: 'bg-gray-700/60 text-gray-300' },
+  in_progress: { label: 'در حال انجام', cls: 'bg-blue-900/60 text-blue-300' },
+  on_hold:     { label: 'متوقف',        cls: 'bg-amber-900/60 text-amber-300' },
+  completed:   { label: 'تکمیل شده',   cls: 'bg-emerald-900/60 text-emerald-300' },
+};
+const TASK_STATUS_OPTIONS = Object.entries(TASK_STATUS_CONFIG).map(([value, { label }]) => ({ value, label }));
+
 function OngoingTasksTab() {
   const { sectionId } = useParams();
   const { user } = useAuth();
@@ -540,6 +548,7 @@ function OngoingTasksTab() {
     setEditRow({
       title: task.title,
       responsible_ids: task.responsibles?.map(r => r.id) ?? [],
+      status: task.status || 'in_progress',
       note: task.note,
     });
   };
@@ -604,7 +613,8 @@ function OngoingTasksTab() {
                 <th className="px-4 py-3 text-right text-gray-400 font-medium w-12">ردیف</th>
                 <th className="px-4 py-3 text-right text-gray-400 font-medium min-w-48">عنوان وظیفه</th>
                 <th className="px-4 py-3 text-right text-gray-400 font-medium min-w-36">مسئول</th>
-                <th className="px-4 py-3 text-right text-gray-400 font-medium min-w-64">وضعیت / یادداشت</th>
+                <th className="px-4 py-3 text-right text-gray-400 font-medium min-w-32">وضعیت</th>
+                <th className="px-4 py-3 text-right text-gray-400 font-medium min-w-48">یادداشت</th>
                 {canEdit && <th className="px-4 py-3 w-20" />}
               </tr>
             </thead>
@@ -631,6 +641,17 @@ function OngoingTasksTab() {
                         />
                       </td>
                       <td className="px-2 py-2">
+                        <select
+                          className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-white text-sm focus:outline-none focus:border-indigo-500"
+                          value={editRow.status}
+                          onChange={e => setEditRow(r => ({ ...r, status: e.target.value }))}
+                        >
+                          {TASK_STATUS_OPTIONS.map(o => (
+                            <option key={o.value} value={o.value}>{o.label}</option>
+                          ))}
+                        </select>
+                      </td>
+                      <td className="px-2 py-2">
                         <input
                           className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-white text-sm focus:outline-none focus:border-indigo-500"
                           value={editRow.note}
@@ -652,6 +673,9 @@ function OngoingTasksTab() {
                     <>
                       <td className="px-4 py-3 text-gray-200 font-medium">{t.title}</td>
                       <td className="px-4 py-3 text-gray-300">{t.responsibles?.length ? t.responsibles.map(r => r.name).join('، ') : <span className="text-gray-600">—</span>}</td>
+                      <td className="px-4 py-3">
+                        {(() => { const s = TASK_STATUS_CONFIG[t.status] || TASK_STATUS_CONFIG.in_progress; return <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${s.cls}`}>{s.label}</span>; })()}
+                      </td>
                       <td className="px-4 py-3 text-gray-300 max-w-md truncate">{t.note || <span className="text-gray-600">—</span>}</td>
                       {canEdit && (
                         <td className="px-4 py-3">
@@ -671,7 +695,7 @@ function OngoingTasksTab() {
               ))}
               {tasks.length === 0 && (
                 <tr>
-                  <td colSpan={canEdit ? 5 : 4} className="px-4 py-12 text-center text-gray-600">
+                  <td colSpan={canEdit ? 6 : 5} className="px-4 py-12 text-center text-gray-600">
                     هیچ وظیفه جاری ثبت نشده است
                   </td>
                 </tr>

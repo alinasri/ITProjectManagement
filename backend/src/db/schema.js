@@ -70,6 +70,8 @@ db.exec(`
     title TEXT NOT NULL,
     section_id INTEGER NOT NULL REFERENCES sections(id) ON DELETE CASCADE,
     responsible_id INTEGER REFERENCES personnel(id) ON DELETE SET NULL,
+    status TEXT NOT NULL DEFAULT 'in_progress'
+      CHECK(status IN ('pending','in_progress','on_hold','completed')),
     note TEXT DEFAULT '',
     created_at TEXT DEFAULT (datetime('now')),
     updated_at TEXT DEFAULT (datetime('now'))
@@ -159,6 +161,12 @@ for (const [table, joinTable, fk] of [
     db.exec(`ALTER TABLE ${table} DROP COLUMN responsible_id`);
   }
 }
+
+// Add status column to ongoing_tasks for existing databases
+try {
+  db.exec(`ALTER TABLE ongoing_tasks ADD COLUMN status TEXT NOT NULL DEFAULT 'in_progress'
+    CHECK(status IN ('pending','in_progress','on_hold','completed'))`);
+} catch (_) {}
 
 // Migrate users.role CHECK constraint to allow the new registry-admin roles
 // (SQLite can't ALTER a CHECK constraint in place — recreate the table)

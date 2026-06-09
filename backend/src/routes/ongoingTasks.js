@@ -35,15 +35,15 @@ router.get('/', requireAuth, (req, res) => {
 });
 
 router.post('/', requireAuth, requireRole('super_admin', 'section_head'), (req, res) => {
-  const { title, section_id, responsible_ids, note } = req.body;
+  const { title, section_id, responsible_ids, status, note } = req.body;
   if (!title?.trim()) return res.status(400).json({ error: 'Title required' });
   const sectionId = req.user.role === 'section_head' ? req.user.section_id : section_id;
   if (!sectionId) return res.status(400).json({ error: 'section_id required' });
 
   const result = db.prepare(
-    `INSERT INTO ongoing_tasks (title, section_id, note)
-     VALUES (?, ?, ?)`
-  ).run(title.trim(), sectionId, note || '');
+    `INSERT INTO ongoing_tasks (title, section_id, status, note)
+     VALUES (?, ?, ?, ?)`
+  ).run(title.trim(), sectionId, status || 'in_progress', note || '');
   const taskId = result.lastInsertRowid;
   if (Array.isArray(responsible_ids)) setResponsibles('ongoing_task_responsibles', 'task_id', taskId, responsible_ids);
   const task = db.prepare('SELECT * FROM ongoing_tasks WHERE id = ?').get(taskId);
@@ -57,11 +57,12 @@ router.put('/:id', requireAuth, requireRole('super_admin', 'section_head'), (req
     return res.status(403).json({ error: 'Forbidden' });
   }
 
-  const { title, responsible_ids, note } = req.body;
+  const { title, responsible_ids, status, note } = req.body;
   db.prepare(
-    `UPDATE ongoing_tasks SET title = ?, note = ?, updated_at = datetime('now') WHERE id = ?`
+    `UPDATE ongoing_tasks SET title = ?, status = ?, note = ?, updated_at = datetime('now') WHERE id = ?`
   ).run(
     title ?? task.title,
+    status ?? task.status,
     note ?? task.note,
     req.params.id
   );
