@@ -51,7 +51,7 @@ export default function Sidebar({ sections = [], activeSectionId }) {
             <SidebarLink to="/admin/users" icon={<Users className="w-4 h-4" />} label="مدیریت کاربران" />
             <SidebarLink to="/it-head" icon={<Shield className="w-4 h-4" />} label="نمای مدیر IT" />
             <div className="pt-3 pb-1 px-3">
-              <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">ثبت‌های سازمانی</p>
+              <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">خریدها، قراردادها و مناقصات</p>
             </div>
             <SidebarLink to="/purchases" icon={<ShoppingCart className="w-4 h-4" />} label="خریدها" />
             <SidebarLink to="/tenders" icon={<Gavel className="w-4 h-4" />} label="مناقصات" />
@@ -74,7 +74,7 @@ export default function Sidebar({ sections = [], activeSectionId }) {
           <>
             <SidebarLink to="/it-head" icon={<LayoutDashboard className="w-4 h-4" />} label="داشبورد کلی" />
             <div className="pt-3 pb-1 px-3">
-              <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">ثبت‌های سازمانی</p>
+              <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">خریدها، قراردادها و مناقصات</p>
             </div>
             <SidebarLink to="/purchases" icon={<ShoppingCart className="w-4 h-4" />} label="خریدها" />
             <SidebarLink to="/tenders" icon={<Gavel className="w-4 h-4" />} label="مناقصات" />

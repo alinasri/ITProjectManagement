@@ -10,6 +10,7 @@ import ChangePasswordPage from './pages/ChangePasswordPage';
 import PurchasesPage from './pages/PurchasesPage';
 import TendersPage from './pages/TendersPage';
 import ContractsPage from './pages/ContractsPage';
+import PublicReport from './pages/PublicReport';
 
 function FullPageSpinner() {
   return (
@@ -72,6 +73,7 @@ export default function App() {
         <Routes>
           {/* Login renders immediately — no loading gate */}
           <Route path="/login" element={<PublicOnly><LoginPage /></PublicOnly>} />
+          <Route path="/report/:token" element={<PublicReport />} />
 
           <Route element={<RequireAuth />}>
             <Route path="/change-password" element={<ChangePasswordPage />} />

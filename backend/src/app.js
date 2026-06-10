@@ -19,6 +19,7 @@ app.use('/api/custom-columns', require('./routes/customColumns'));
 app.use('/api/purchases', require('./routes/purchases'));
 app.use('/api/tenders', require('./routes/tenders'));
 app.use('/api/contracts', require('./routes/contracts'));
+app.use('/api/report',   require('./routes/report'));
 
 // Serve React build in production
 const publicDir = path.join(__dirname, '../public');

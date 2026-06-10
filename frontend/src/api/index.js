@@ -70,6 +70,12 @@ export const tenders = {
   archive: (id, archive) => api.patch(`/tenders/${id}/archive`, { archive }),
 };
 
+export const report = {
+  getToken:       ()      => api.get('/report/token'),
+  regenerate:     ()      => api.post('/report/regenerate'),
+  getPublic:      (token) => api.get(`/report/public/${token}`),
+};
+
 export const contracts = {
   list: (params) => api.get('/contracts', { params }),
   create: (data) => api.post('/contracts', data),

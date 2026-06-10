@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Routes, Route, useNavigate } from 'react-router-dom';
 import PageHeader from '../components/PageHeader';
+import ShareReportButton from '../components/ShareReportButton';
 import StatCard from '../components/StatCard';
 import StatusBadge from '../components/StatusBadge';
 import Modal from '../components/Modal';
@@ -43,7 +44,7 @@ function OverviewTab() {
 
   return (
     <div>
-      <PageHeader title="داشبورد مدیر سیستم" subtitle="نمای کلی تمام بخش‌ها و پروژه‌ها" />
+      <PageHeader title="داشبورد مدیر سیستم" subtitle="نمای کلی تمام بخش‌ها و پروژه‌ها" action={<ShareReportButton />} />
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
         <StatCard label="کل پروژه‌ها" value={total} icon="📋" color="indigo" />

@@ -222,6 +222,15 @@ try {
   db.exec('ALTER TABLE users ADD COLUMN is_active INTEGER NOT NULL DEFAULT 1');
 } catch (_) {}
 
+// Report token for public shareable CEO report
+try {
+  db.exec(`CREATE TABLE IF NOT EXISTS report_tokens (
+    id      INTEGER PRIMARY KEY DEFAULT 1,
+    token   TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  )`);
+} catch (_) {}
+
 // Seed initial data only once
 const existing = db.prepare('SELECT COUNT(*) as c FROM sections').get();
 if (existing.c === 0) {

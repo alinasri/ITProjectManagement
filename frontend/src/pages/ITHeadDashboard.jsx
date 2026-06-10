@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import PageHeader from '../components/PageHeader';
+import ShareReportButton from '../components/ShareReportButton';
 import StatCard from '../components/StatCard';
 import {
   projects as projectsApi, ongoingTasks as ongoingTasksApi,
@@ -42,7 +43,7 @@ const TABS = [
   { id: 'overview',    label: 'نمای کلی',        icon: LayoutDashboard },
   { id: 'projects',    label: 'پروژه‌ها',          icon: FolderKanban },
   { id: 'tasks',       label: 'وظایف جاری',        icon: ListChecks },
-  { id: 'registries',  label: 'ثبت‌های سازمانی',   icon: Building2 },
+  { id: 'registries',  label: 'خریدها، قراردادها و مناقصات',   icon: Building2 },
 ];
 
 export default function ITHeadDashboard() {
@@ -81,7 +82,7 @@ export default function ITHeadDashboard() {
 
   return (
     <div>
-      <PageHeader title="داشبورد مدیر IT" subtitle="نمای کلی تمام بخش‌ها" />
+      <PageHeader title="داشبورد مدیر IT" subtitle="نمای کلی تمام بخش‌ها" action={<ShareReportButton />} />
 
       <div className="flex gap-1 mb-6 bg-gray-900 border border-gray-800 rounded-2xl p-1.5">
         {TABS.map(tab => {
