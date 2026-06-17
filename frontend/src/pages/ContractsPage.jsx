@@ -9,7 +9,25 @@ import Modal from '../components/Modal';
 import StatusHistoryTimeline from '../components/StatusHistoryTimeline';
 import { contracts as contractsApi } from '../api';
 import { useSections } from '../context/SectionsContext';
-import { Plus, Trash2, PencilLine, Check, X, FileSignature, Archive, History } from 'lucide-react';
+import { Plus, Trash2, PencilLine, Check, X, FileSignature, Archive, History, AlertTriangle } from 'lucide-react';
+import DateObject from 'react-date-object';
+import persian from 'react-date-object/calendars/persian';
+import gregorian from 'react-date-object/calendars/gregorian';
+
+function contractExpiryTag(c) {
+  if (!['active', 'renewed'].includes(c.status) || !c.end_date) return null;
+  const parts = c.end_date.split('/').map(Number);
+  if (parts.length !== 3) return null;
+  try {
+    const g = new DateObject({ year: parts[0], month: parts[1], day: parts[2], calendar: persian }).convert(gregorian);
+    const end = new Date(g.year, g.month.number - 1, g.day);
+    const today = new Date(); today.setHours(0, 0, 0, 0);
+    const in60 = new Date(today); in60.setDate(in60.getDate() + 60);
+    if (end < today) return 'expired';
+    if (end <= in60) return 'expiring';
+  } catch (_) {}
+  return null;
+}
 
 const STATUS_CONFIG = {
   active:    { label: 'فعال',          cls: 'bg-emerald-900/60 text-emerald-300' },
@@ -160,6 +178,25 @@ export default function ContractsPage() {
         ))}
       </div>
 
+      {(() => {
+        const expired  = list.filter(c => contractExpiryTag(c) === 'expired').length;
+        const expiring = list.filter(c => contractExpiryTag(c) === 'expiring').length;
+        if (!expired && !expiring) return null;
+        return (
+          <div className="mb-6 flex items-start gap-3 px-5 py-4 bg-amber-900/20 border border-amber-600/30 rounded-2xl">
+            <AlertTriangle className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
+            <div>
+              <p className="text-sm font-semibold text-amber-200">هشدار انقضای قرارداد</p>
+              <p className="text-xs text-amber-300/70 mt-0.5">
+                {expired > 0 && <span>{expired} قرارداد منقضی شده</span>}
+                {expired > 0 && expiring > 0 && ' — '}
+                {expiring > 0 && <span>{expiring} قرارداد در ۶۰ روز آینده منقضی می‌شود</span>}
+              </p>
+            </div>
+          </div>
+        );
+      })()}
+
       <div className="bg-gray-900 border border-gray-800 rounded-2xl overflow-hidden">
         <div className="overflow-x-auto scrollbar-thin">
           <table className="w-full text-sm">
@@ -177,8 +214,14 @@ export default function ContractsPage() {
               </tr>
             </thead>
             <tbody>
-              {list.map((c, idx) => (
-                <tr key={c.id} className={`border-b border-gray-800/60 hover:bg-gray-800/30 transition-colors group ${c.is_archived ? 'opacity-60' : ''}`}>
+              {list.map((c, idx) => {
+                const expiryTag = contractExpiryTag(c);
+                return (
+                <tr key={c.id} className={`border-b border-gray-800/60 transition-colors group ${
+                  expiryTag === 'expired'  ? 'bg-red-950/40 hover:bg-red-950/60' :
+                  expiryTag === 'expiring' ? 'bg-amber-950/30 hover:bg-amber-950/50' :
+                  'hover:bg-gray-800/30'
+                } ${c.is_archived ? 'opacity-60' : ''}`}>
                   <td className="px-4 py-3 text-gray-500 text-center">{idx + 1}</td>
 
                   {editingId === c.id ? (
@@ -284,7 +327,8 @@ export default function ContractsPage() {
                     </>
                   )}
                 </tr>
-              ))}
+              );
+              })}
               {list.length === 0 && (
                 <tr>
                   <td colSpan={colCount} className="px-4 py-12 text-center text-gray-600">

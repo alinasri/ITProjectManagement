@@ -14,15 +14,31 @@ import {
 } from 'recharts';
 import {
   ChevronLeft, ShoppingCart, Gavel, FileSignature,
-  LayoutDashboard, FolderKanban, ListChecks, Building2,
+  LayoutDashboard, FolderKanban, ListChecks, Building2, AlertTriangle,
 } from 'lucide-react';
 import DateObject from 'react-date-object';
 import persian from 'react-date-object/calendars/persian';
 import persian_fa from 'react-date-object/locales/persian_fa';
+import gregorian from 'react-date-object/calendars/gregorian';
 
 function toPersianDate(isoStr) {
   if (!isoStr) return null;
   return new DateObject(new Date(isoStr + 'T00:00:00')).convert(persian, persian_fa).format('D MMMM YYYY');
+}
+
+function contractExpiryTag(c) {
+  if (!['active', 'renewed'].includes(c.status) || !c.end_date) return null;
+  const parts = c.end_date.split('/').map(Number);
+  if (parts.length !== 3) return null;
+  try {
+    const g = new DateObject({ year: parts[0], month: parts[1], day: parts[2], calendar: persian }).convert(gregorian);
+    const end = new Date(g.year, g.month.number - 1, g.day);
+    const today = new Date(); today.setHours(0, 0, 0, 0);
+    const in60 = new Date(today); in60.setDate(in60.getDate() + 60);
+    if (end < today) return 'expired';
+    if (end <= in60) return 'expiring';
+  } catch (_) {}
+  return null;
 }
 
 const PROJECT_STATUS_COLORS = {
@@ -232,9 +248,20 @@ function DrilldownPanel({ type, allProjects, allTasks, allPurchases, allTenders,
       columns: [
         { label: 'عنوان',       render: r => <span className="text-gray-100">{r.title}</span> },
         { label: 'طرف قرارداد', render: r => <span className="text-gray-400 text-xs">{r.counterparty || '—'}</span> },
-        { label: 'تاریخ پایان', render: r => <span className="text-gray-400 text-xs">{r.end_date || '—'}</span> },
+        { label: 'تاریخ پایان', render: r => {
+          const tag = contractExpiryTag(r);
+          return r.end_date
+            ? <span className={tag === 'expired' ? 'text-red-400 text-xs font-medium' : tag === 'expiring' ? 'text-amber-400 text-xs' : 'text-gray-400 text-xs'}>{r.end_date}{tag && ' ⚠'}</span>
+            : <span className="text-gray-600 text-xs">—</span>;
+        }},
         { label: 'وضعیت',      render: r => <StatusPill status={r.status} /> },
       ],
+      rowClass: r => {
+        const tag = contractExpiryTag(r);
+        if (tag === 'expired')  return 'bg-red-950/40 hover:bg-red-950/60';
+        if (tag === 'expiring') return 'bg-amber-950/30 hover:bg-amber-950/50';
+        return 'hover:bg-gray-800/40';
+      },
       onRowClick: () => navigate('/contracts'),
     },
   };
@@ -269,7 +296,7 @@ function DrilldownPanel({ type, allProjects, allTasks, allPurchases, allTenders,
                 <tr
                   key={row.id}
                   onClick={() => cfg.onRowClick(row)}
-                  className="border-b border-gray-800/50 hover:bg-gray-800/40 cursor-pointer transition-colors"
+                  className={`border-b border-gray-800/50 cursor-pointer transition-colors ${cfg.rowClass ? cfg.rowClass(row) : 'hover:bg-gray-800/40'}`}
                 >
                   {cfg.columns.map((col, i) => (
                     <td key={i} className="px-5 py-3 whitespace-nowrap">{col.render(row)}</td>
@@ -325,6 +352,25 @@ function OverviewTab({ sections, allProjects, allTasks, allPurchases, allTenders
           onClose={() => setDrilldown(null)}
         />
       )}
+
+      {(() => {
+        const expired  = allContracts.filter(c => contractExpiryTag(c) === 'expired').length;
+        const expiring = allContracts.filter(c => contractExpiryTag(c) === 'expiring').length;
+        if (!expired && !expiring) return null;
+        return (
+          <div className="mb-6 flex items-start gap-3 px-5 py-4 bg-amber-900/20 border border-amber-600/30 rounded-2xl">
+            <AlertTriangle className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
+            <div>
+              <p className="text-sm font-semibold text-amber-200">هشدار انقضای قرارداد</p>
+              <p className="text-xs text-amber-300/70 mt-0.5">
+                {expired > 0 && <span>{expired} قرارداد منقضی شده</span>}
+                {expired > 0 && expiring > 0 && ' — '}
+                {expiring > 0 && <span>{expiring} قرارداد در ۶۰ روز آینده منقضی می‌شود</span>}
+              </p>
+            </div>
+          </div>
+        );
+      })()}
 
       <h2 className="text-sm font-semibold text-gray-400 mb-4 uppercase tracking-wider">بخش‌ها</h2>
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">

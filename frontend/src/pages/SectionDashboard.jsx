@@ -8,9 +8,9 @@ import Modal from '../components/Modal';
 import ConfirmDialog from '../components/ConfirmDialog';
 import MultiSelect from '../components/MultiSelect';
 import StatusHistoryTimeline from '../components/StatusHistoryTimeline';
-import { projects as projectsApi, personnel as personnelApi, customColumns as colsApi, ongoingTasks as ongoingTasksApi } from '../api';
+import { projects as projectsApi, personnel as personnelApi, customColumns as colsApi, ongoingTasks as ongoingTasksApi, contracts as contractsApi, purchases as purchasesApi, tenders as tendersApi } from '../api';
 import { useSections } from '../context/SectionsContext';
-import { Plus, Trash2, PencilLine, Users, FolderKanban, Columns, Check, X, ListChecks, Archive, History } from 'lucide-react';
+import { Plus, Trash2, PencilLine, Users, FolderKanban, Columns, Check, X, ListChecks, Archive, History, Building2, FileSignature, ShoppingCart, Gavel, AlertTriangle } from 'lucide-react';
 import DateObject from 'react-date-object';
 import persian from 'react-date-object/calendars/persian';
 import persian_fa from 'react-date-object/locales/persian_fa';
@@ -32,6 +32,47 @@ function persianPickerToISO(persianStr) {
   if (!persianStr) return '';
   const [y, m, d] = persianStr.split('/').map(Number);
   return new DateObject({ year: y, month: m, day: d, calendar: persian }).convert(gregorian).format('YYYY-MM-DD');
+}
+
+function contractExpiryTag(c) {
+  if (!['active', 'renewed'].includes(c.status) || !c.end_date) return null;
+  const parts = c.end_date.split('/').map(Number);
+  if (parts.length !== 3) return null;
+  try {
+    const g = new DateObject({ year: parts[0], month: parts[1], day: parts[2], calendar: persian }).convert(gregorian);
+    const end = new Date(g.year, g.month.number - 1, g.day);
+    const today = new Date(); today.setHours(0, 0, 0, 0);
+    const in60 = new Date(today); in60.setDate(in60.getDate() + 60);
+    if (end < today) return 'expired';
+    if (end <= in60) return 'expiring';
+  } catch (_) {}
+  return null;
+}
+
+const CONTRACT_STATUS = {
+  active:    { label: 'فعال',          cls: 'bg-emerald-900/60 text-emerald-300' },
+  renewed:   { label: 'تمدید شده',     cls: 'bg-blue-900/60 text-blue-300' },
+  expired:   { label: 'خاتمه یافته',   cls: 'bg-gray-700/60 text-gray-300' },
+  cancelled: { label: 'لغو شده',       cls: 'bg-red-900/60 text-red-300' },
+};
+const PURCHASE_STATUS = {
+  pending:   { label: 'در انتظار',     cls: 'bg-amber-900/60 text-amber-300' },
+  approved:  { label: 'تأیید شده',     cls: 'bg-blue-900/60 text-blue-300' },
+  purchased: { label: 'خریداری شده',   cls: 'bg-indigo-900/60 text-indigo-300' },
+  delivered: { label: 'تحویل شده',     cls: 'bg-emerald-900/60 text-emerald-300' },
+  cancelled: { label: 'لغو شده',       cls: 'bg-red-900/60 text-red-300' },
+};
+const TENDER_STATUS = {
+  open:       { label: 'در حال برگزاری',  cls: 'bg-blue-900/60 text-blue-300' },
+  evaluating: { label: 'در حال ارزیابی',  cls: 'bg-indigo-900/60 text-indigo-300' },
+  awarded:    { label: 'برنده اعلام شده', cls: 'bg-emerald-900/60 text-emerald-300' },
+  completed:  { label: 'تکمیل شده',       cls: 'bg-gray-700/60 text-gray-300' },
+  cancelled:  { label: 'لغو شده',         cls: 'bg-red-900/60 text-red-300' },
+};
+
+function RegPill({ status, config }) {
+  const s = config[status] ?? { label: status, cls: 'bg-gray-700/60 text-gray-300' };
+  return <span className={`inline-flex px-2.5 py-0.5 rounded-full text-xs font-medium ${s.cls}`}>{s.label}</span>;
 }
 
 function ProgressBar({ value }) {
@@ -56,6 +97,7 @@ export default function SectionDashboard() {
         <Route index element={<ProjectsTab />} />
         <Route path="personnel" element={<PersonnelTab />} />
         <Route path="ongoing-tasks" element={<OngoingTasksTab />} />
+        <Route path="registries" element={<RegistriesTab />} />
       </Routes>
     </div>
   );
@@ -83,6 +125,10 @@ function SectionTabs({ sectionId }) {
       <NavLink to={`${base}/personnel`} className={tabClass}>
         <Users className="w-4 h-4" />
         مسئولین
+      </NavLink>
+      <NavLink to={`${base}/registries`} className={tabClass}>
+        <Building2 className="w-4 h-4" />
+        قراردادها، خریدها و مناقصات واحد من
       </NavLink>
     </div>
   );
@@ -907,6 +953,165 @@ function OngoingTasksTab() {
       >
         <StatusHistoryTimeline history={historyRows} statusConfig={TASK_STATUS_CONFIG} />
       </Modal>
+    </div>
+  );
+}
+
+// ── Registries Tab ────────────────────────────────────────────────────────────
+
+function RegistriesTab() {
+  const { sectionId } = useParams();
+  const [contracts, setContracts] = useState([]);
+  const [purchases, setPurchases] = useState([]);
+  const [tenders, setTenders] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const sid = Number(sectionId);
+    Promise.all([contractsApi.list(), purchasesApi.list(), tendersApi.list()])
+      .then(([cRes, pRes, tRes]) => {
+        setContracts(cRes.data.filter(c => c.sections?.some(s => s.id === sid)));
+        setPurchases(pRes.data.filter(p => p.sections?.some(s => s.id === sid)));
+        setTenders(tRes.data.filter(t => t.sections?.some(s => s.id === sid)));
+      })
+      .finally(() => setLoading(false));
+  }, [sectionId]);
+
+  if (loading) return (
+    <div className="flex items-center justify-center h-64">
+      <div className="w-8 h-8 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin" />
+    </div>
+  );
+
+  const expiredContracts  = contracts.filter(c => contractExpiryTag(c) === 'expired');
+  const expiringContracts = contracts.filter(c => contractExpiryTag(c) === 'expiring');
+
+  const Section = ({ icon: Icon, title, count, children }) => (
+    <div className="bg-gray-900 border border-gray-800 rounded-2xl overflow-hidden">
+      <div className="flex items-center gap-3 px-5 py-3 border-b border-gray-800">
+        <Icon className="w-4 h-4 text-indigo-400" />
+        <span className="font-semibold text-gray-200 text-sm">{title}</span>
+        <span className="text-xs text-gray-500 bg-gray-800 px-2 py-0.5 rounded-full">{count} مورد</span>
+      </div>
+      {children}
+    </div>
+  );
+
+  return (
+    <div className="space-y-6">
+      <PageHeader title="قراردادها، خریدها و مناقصات واحد من" subtitle="قراردادها، خریدها و مناقصات مرتبط با این بخش" />
+
+      {/* Contracts */}
+      <Section icon={FileSignature} title="قراردادها" count={contracts.length}>
+        {(expiredContracts.length > 0 || expiringContracts.length > 0) && (
+          <div className="flex items-center gap-3 px-5 py-2.5 bg-amber-900/20 border-b border-amber-800/30">
+            <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0" />
+            <span className="text-xs text-amber-300">
+              {expiredContracts.length > 0 && <span>{expiredContracts.length} قرارداد منقضی شده</span>}
+              {expiredContracts.length > 0 && expiringContracts.length > 0 && ' — '}
+              {expiringContracts.length > 0 && <span>{expiringContracts.length} قرارداد در ۶۰ روز آینده منقضی می‌شود</span>}
+            </span>
+          </div>
+        )}
+        {contracts.length === 0
+          ? <p className="px-5 py-8 text-center text-sm text-gray-600">قراردادی برای این بخش ثبت نشده است</p>
+          : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-gray-800 bg-gray-800/30">
+                    <th className="px-4 py-3 text-right text-gray-400 font-medium min-w-48">موضوع قرارداد</th>
+                    <th className="px-4 py-3 text-right text-gray-400 font-medium">وضعیت</th>
+                    <th className="px-4 py-3 text-right text-gray-400 font-medium min-w-32">طرف قرارداد</th>
+                    <th className="px-4 py-3 text-right text-gray-400 font-medium min-w-28">تاریخ پایان</th>
+                    <th className="px-4 py-3 text-right text-gray-400 font-medium">مبلغ</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {contracts.map(c => {
+                    const tag = contractExpiryTag(c);
+                    return (
+                      <tr key={c.id} className={`border-b border-gray-800/60 transition-colors ${
+                        tag === 'expired'  ? 'bg-red-950/40' :
+                        tag === 'expiring' ? 'bg-amber-950/30' : 'hover:bg-gray-800/20'
+                      }`}>
+                        <td className="px-4 py-3 text-gray-200 font-medium">{c.title}</td>
+                        <td className="px-4 py-3"><RegPill status={c.status} config={CONTRACT_STATUS} /></td>
+                        <td className="px-4 py-3 text-gray-300">{c.counterparty || <span className="text-gray-600">—</span>}</td>
+                        <td className="px-4 py-3">
+                          {c.end_date
+                            ? <span className={tag === 'expired' ? 'text-red-400 font-medium' : tag === 'expiring' ? 'text-amber-400' : 'text-gray-300'}>{c.end_date}</span>
+                            : <span className="text-gray-600">—</span>}
+                        </td>
+                        <td className="px-4 py-3 text-gray-300">{c.amount || <span className="text-gray-600">—</span>}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+      </Section>
+
+      {/* Purchases */}
+      <Section icon={ShoppingCart} title="خریدها" count={purchases.length}>
+        {purchases.length === 0
+          ? <p className="px-5 py-8 text-center text-sm text-gray-600">خریدی برای این بخش ثبت نشده است</p>
+          : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-gray-800 bg-gray-800/30">
+                    <th className="px-4 py-3 text-right text-gray-400 font-medium min-w-48">عنوان</th>
+                    <th className="px-4 py-3 text-right text-gray-400 font-medium">وضعیت</th>
+                    <th className="px-4 py-3 text-right text-gray-400 font-medium min-w-32">تأمین‌کننده</th>
+                    <th className="px-4 py-3 text-right text-gray-400 font-medium">مبلغ</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {purchases.map(p => (
+                    <tr key={p.id} className="border-b border-gray-800/60 hover:bg-gray-800/20 transition-colors">
+                      <td className="px-4 py-3 text-gray-200 font-medium">{p.title}</td>
+                      <td className="px-4 py-3"><RegPill status={p.status} config={PURCHASE_STATUS} /></td>
+                      <td className="px-4 py-3 text-gray-300">{p.supplier || <span className="text-gray-600">—</span>}</td>
+                      <td className="px-4 py-3 text-gray-300">{p.amount || <span className="text-gray-600">—</span>}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+      </Section>
+
+      {/* Tenders */}
+      <Section icon={Gavel} title="مناقصات" count={tenders.length}>
+        {tenders.length === 0
+          ? <p className="px-5 py-8 text-center text-sm text-gray-600">مناقصه‌ای برای این بخش ثبت نشده است</p>
+          : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-gray-800 bg-gray-800/30">
+                    <th className="px-4 py-3 text-right text-gray-400 font-medium min-w-48">عنوان</th>
+                    <th className="px-4 py-3 text-right text-gray-400 font-medium">وضعیت</th>
+                    <th className="px-4 py-3 text-right text-gray-400 font-medium">مبلغ تخمینی</th>
+                    <th className="px-4 py-3 text-right text-gray-400 font-medium min-w-28">مهلت</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {tenders.map(t => (
+                    <tr key={t.id} className="border-b border-gray-800/60 hover:bg-gray-800/20 transition-colors">
+                      <td className="px-4 py-3 text-gray-200 font-medium">{t.title}</td>
+                      <td className="px-4 py-3"><RegPill status={t.status} config={TENDER_STATUS} /></td>
+                      <td className="px-4 py-3 text-gray-300">{t.estimated_amount || <span className="text-gray-600">—</span>}</td>
+                      <td className="px-4 py-3 text-gray-300">{t.deadline || <span className="text-gray-600">—</span>}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+      </Section>
     </div>
   );
 }

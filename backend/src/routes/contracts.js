@@ -22,9 +22,18 @@ function setSections(id, sectionIds) {
   sectionIds.forEach(sid => insert.run(id, sid));
 }
 
-router.get('/', requireAuth, requireRole('super_admin', 'it_head', 'contract_admin'), (req, res) => {
+router.get('/', requireAuth, requireRole('super_admin', 'it_head', 'contract_admin', 'section_head'), (req, res) => {
   const showArchived = req.query.archived === '1' ? 1 : 0;
-  const rows = db.prepare('SELECT * FROM contracts WHERE is_archived = ? AND is_deleted = 0 ORDER BY id').all(showArchived);
+  let rows;
+  if (req.user.role === 'section_head') {
+    rows = db.prepare(
+      `SELECT DISTINCT c.* FROM contracts c
+       JOIN contract_sections cs ON cs.contract_id = c.id
+       WHERE cs.section_id = ? AND c.is_archived = ? AND c.is_deleted = 0 ORDER BY c.id`
+    ).all(req.user.section_id, showArchived);
+  } else {
+    rows = db.prepare('SELECT * FROM contracts WHERE is_archived = ? AND is_deleted = 0 ORDER BY id').all(showArchived);
+  }
   res.json(enrichContracts(rows));
 });
 
