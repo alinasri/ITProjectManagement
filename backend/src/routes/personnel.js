@@ -29,6 +29,7 @@ router.post('/', requireAuth, requireRole('super_admin', 'section_head'), (req, 
   res.status(201).json(db.prepare('SELECT * FROM personnel WHERE id = ?').get(result.lastInsertRowid));
 });
 
+
 router.delete('/:id', requireAuth, requireRole('super_admin', 'section_head'), (req, res) => {
   const person = db.prepare('SELECT * FROM personnel WHERE id = ?').get(req.params.id);
   if (!person) return res.status(404).json({ error: 'Not found' });
