@@ -15,66 +15,23 @@ import DateObject from 'react-date-object';
 import persian from 'react-date-object/calendars/persian';
 import persian_fa from 'react-date-object/locales/persian_fa';
 import gregorian from 'react-date-object/calendars/gregorian';
+import PersianDatePicker from '../components/PersianDatePicker';
 
 function toPersianDate(isoStr) {
   if (!isoStr) return null;
   return new DateObject(new Date(isoStr + 'T00:00:00')).convert(persian, persian_fa).format('D MMMM YYYY');
 }
 
-const PERSIAN_MONTHS = ['فروردین','اردیبهشت','خرداد','تیر','مرداد','شهریور','مهر','آبان','آذر','دی','بهمن','اسفند'];
+function isoToPersianPicker(isoStr) {
+  if (!isoStr) return '';
+  const d = new DateObject(new Date(isoStr + 'T00:00:00')).convert(persian);
+  return `${d.year}/${String(d.month.number).padStart(2,'0')}/${String(d.day).padStart(2,'0')}`;
+}
 
-function PersianDatePicker({ value, onChange }) {
-  const parse = (iso) => {
-    if (!iso) return { y: '', m: '', d: '' };
-    const dt = new DateObject(new Date(iso + 'T00:00:00')).convert(persian);
-    return { y: String(dt.year), m: String(dt.month.number), d: String(dt.day) };
-  };
-  const parsed = parse(value);
-  const [y, setY] = useState(parsed.y);
-  const [m, setM] = useState(parsed.m);
-  const [d, setD] = useState(parsed.d);
-
-  useEffect(() => {
-    const p = parse(value);
-    setY(p.y); setM(p.m); setD(p.d);
-  }, [value]);
-
-  const emit = (ny, nm, nd) => {
-    if (ny && nm && nd) {
-      try {
-        onChange(new DateObject({ year: +ny, month: +nm, day: +nd, calendar: persian })
-          .convert(gregorian).format('YYYY-MM-DD'));
-      } catch (_) { onChange(''); }
-    } else {
-      onChange('');
-    }
-  };
-
-  const curYear = new DateObject(new Date()).convert(persian).year;
-  const years = Array.from({ length: 10 }, (_, i) => curYear - 1 + i);
-  const sel = 'bg-gray-800 border border-gray-700 rounded px-1 py-1.5 text-white text-xs focus:outline-none focus:border-indigo-500';
-
-  return (
-    <div className="flex gap-1 items-center">
-      <select value={y} onChange={e => { setY(e.target.value); emit(e.target.value, m, d); }} className={`${sel} w-[4.5rem]`}>
-        <option value="">سال</option>
-        {years.map(yr => <option key={yr} value={yr}>{yr}</option>)}
-      </select>
-      <select value={m} onChange={e => { setM(e.target.value); emit(y, e.target.value, d); }} className={`${sel} w-24`}>
-        <option value="">ماه</option>
-        {PERSIAN_MONTHS.map((mn, i) => <option key={i+1} value={i+1}>{mn}</option>)}
-      </select>
-      <select value={d} onChange={e => { setD(e.target.value); emit(y, m, e.target.value); }} className={`${sel} w-12`}>
-        <option value="">روز</option>
-        {Array.from({ length: 31 }, (_, i) => i + 1).map(day => <option key={day} value={day}>{day}</option>)}
-      </select>
-      {value && (
-        <button type="button" onClick={() => { setY(''); setM(''); setD(''); onChange(''); }} className="text-gray-500 hover:text-gray-300 p-0.5">
-          <X className="w-3 h-3" />
-        </button>
-      )}
-    </div>
-  );
+function persianPickerToISO(persianStr) {
+  if (!persianStr) return '';
+  const [y, m, d] = persianStr.split('/').map(Number);
+  return new DateObject({ year: y, month: m, day: d, calendar: persian }).convert(gregorian).format('YYYY-MM-DD');
 }
 
 function ProgressBar({ value }) {
@@ -409,10 +366,10 @@ function ProjectsTab() {
                           <span className="text-xs text-gray-300 w-8 shrink-0">{editRow.progress ?? 0}%</span>
                         </div>
                       </td>
-                      <td className="px-2 py-2">
+                      <td className="px-2 py-2 min-w-36">
                         <PersianDatePicker
-                          value={editRow.due_date}
-                          onChange={v => setEditRow(r => ({ ...r, due_date: v }))}
+                          value={isoToPersianPicker(editRow.due_date)}
+                          onChange={v => setEditRow(r => ({ ...r, due_date: persianPickerToISO(v) }))}
                         />
                       </td>
                       <td className="px-2 py-2">
