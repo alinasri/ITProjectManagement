@@ -37,16 +37,17 @@ router.get('/', requireAuth, (req, res) => {
 });
 
 router.post('/', requireAuth, requireRole('super_admin', 'section_head'), (req, res) => {
-  const { title, section_id, responsible_ids, status, note } = req.body;
+  const { title, section_id, responsible_ids, status, note, progress } = req.body;
   if (!title?.trim()) return res.status(400).json({ error: 'Title required' });
   const sectionId = req.user.role === 'section_head' ? req.user.section_id : section_id;
   if (!sectionId) return res.status(400).json({ error: 'section_id required' });
 
   const initialStatus = status || 'in_progress';
+  const initialProgress = Math.min(100, Math.max(0, Number(progress) || 0));
   const result = db.prepare(
-    `INSERT INTO ongoing_tasks (title, section_id, status, note)
-     VALUES (?, ?, ?, ?)`
-  ).run(title.trim(), sectionId, initialStatus, note || '');
+    `INSERT INTO ongoing_tasks (title, section_id, status, note, progress)
+     VALUES (?, ?, ?, ?, ?)`
+  ).run(title.trim(), sectionId, initialStatus, note || '', initialProgress);
   const taskId = result.lastInsertRowid;
   recordStatusChange('ongoing_task', taskId, null, initialStatus, req.user.id);
   if (Array.isArray(responsible_ids)) setResponsibles('ongoing_task_responsibles', 'task_id', taskId, responsible_ids);
@@ -72,14 +73,16 @@ router.put('/:id', requireAuth, requireRole('super_admin', 'section_head'), (req
     return res.status(403).json({ error: 'Forbidden' });
   }
 
-  const { title, responsible_ids, status, note } = req.body;
+  const { title, responsible_ids, status, note, progress } = req.body;
   const newStatus = status ?? task.status;
+  const newProgress = progress != null ? Math.min(100, Math.max(0, Number(progress))) : (task.progress ?? 0);
   db.prepare(
-    `UPDATE ongoing_tasks SET title = ?, status = ?, note = ?, updated_at = datetime('now') WHERE id = ?`
+    `UPDATE ongoing_tasks SET title = ?, status = ?, note = ?, progress = ?, updated_at = datetime('now') WHERE id = ?`
   ).run(
     title ?? task.title,
     newStatus,
     note ?? task.note,
+    newProgress,
     req.params.id
   );
   recordStatusChange('ongoing_task', req.params.id, task.status, newStatus, req.user.id);

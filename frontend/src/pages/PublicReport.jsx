@@ -136,7 +136,18 @@ function ProjectsSection({ projects, sections }) {
                       {sp.map(p => (
                         <tr key={p.id} className="hover:bg-gray-800/20">
                           <td className="px-10 py-3 text-gray-300">{p.title}</td>
-                          <td className="px-6 py-3 text-left w-36"><StatusPill status={p.status} /></td>
+                          <td className="px-6 py-3 w-36"><StatusPill status={p.status} /></td>
+                          <td className="px-6 py-3 w-40">
+                            <div className="flex items-center gap-2">
+                              <div className="flex-1 bg-gray-700 rounded-full h-1.5">
+                                <div
+                                  className={`h-1.5 rounded-full ${(p.progress ?? 0) === 100 ? 'bg-emerald-500' : (p.progress ?? 0) >= 50 ? 'bg-indigo-500' : (p.progress ?? 0) > 0 ? 'bg-blue-500' : 'bg-gray-600'}`}
+                                  style={{ width: `${p.progress ?? 0}%` }}
+                                />
+                              </div>
+                              <span className="text-xs text-gray-400 w-7 text-left shrink-0">{p.progress ?? 0}%</span>
+                            </div>
+                          </td>
                         </tr>
                       ))}
                     </tbody>

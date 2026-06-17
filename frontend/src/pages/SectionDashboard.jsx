@@ -12,6 +12,19 @@ import { projects as projectsApi, personnel as personnelApi, customColumns as co
 import { useSections } from '../context/SectionsContext';
 import { Plus, Trash2, PencilLine, Users, FolderKanban, Columns, Check, X, ListChecks, Archive, History } from 'lucide-react';
 
+function ProgressBar({ value }) {
+  const pct = Math.min(100, Math.max(0, value || 0));
+  const color = pct === 100 ? 'bg-emerald-500' : pct >= 50 ? 'bg-indigo-500' : pct > 0 ? 'bg-blue-500' : 'bg-gray-600';
+  return (
+    <div className="flex items-center gap-2">
+      <div className="flex-1 bg-gray-700 rounded-full h-1.5 min-w-12">
+        <div className={`${color} h-1.5 rounded-full transition-all`} style={{ width: `${pct}%` }} />
+      </div>
+      <span className="text-xs text-gray-400 w-7 text-left shrink-0">{pct}%</span>
+    </div>
+  );
+}
+
 export default function SectionDashboard() {
   const { sectionId } = useParams();
   return (
@@ -122,6 +135,7 @@ function ProjectsTab() {
       title: project.title,
       responsible_ids: project.responsibles?.map(r => r.id) ?? [],
       status: project.status,
+      progress: project.progress ?? 0,
       future_plan: project.future_plan,
       problems: project.problems,
       custom_values: cvMap,
@@ -259,6 +273,7 @@ function ProjectsTab() {
                 <th className="px-4 py-3 text-right text-gray-400 font-medium min-w-48">عنوان پروژه</th>
                 <th className="px-4 py-3 text-right text-gray-400 font-medium min-w-36">مسئول اقدام</th>
                 <th className="px-4 py-3 text-right text-gray-400 font-medium min-w-32">آخرین وضعیت</th>
+                <th className="px-4 py-3 text-right text-gray-400 font-medium min-w-32">پیشرفت</th>
                 <th className="px-4 py-3 text-right text-gray-400 font-medium min-w-48">برنامه آتی</th>
                 <th className="px-4 py-3 text-right text-gray-400 font-medium min-w-48">مشکلات</th>
                 {columns.map(col => (
@@ -310,6 +325,20 @@ function ProjectsTab() {
                         </select>
                       </td>
                       <td className="px-2 py-2">
+                        <div className="flex items-center gap-2 min-w-32">
+                          <input
+                            type="range"
+                            min="0"
+                            max="100"
+                            step="5"
+                            className="flex-1 accent-indigo-500"
+                            value={editRow.progress ?? 0}
+                            onChange={e => setEditRow(r => ({ ...r, progress: Number(e.target.value) }))}
+                          />
+                          <span className="text-xs text-gray-300 w-8 shrink-0">{editRow.progress ?? 0}%</span>
+                        </div>
+                      </td>
+                      <td className="px-2 py-2">
                         <input
                           className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-white text-sm focus:outline-none focus:border-indigo-500"
                           value={editRow.future_plan}
@@ -351,6 +380,7 @@ function ProjectsTab() {
                       <td className="px-4 py-3 text-gray-200 font-medium">{p.title}</td>
                       <td className="px-4 py-3 text-gray-300">{p.responsibles?.length ? p.responsibles.map(r => r.name).join('، ') : <span className="text-gray-600">—</span>}</td>
                       <td className="px-4 py-3"><StatusBadge status={p.status} /></td>
+                      <td className="px-4 py-3 min-w-32"><ProgressBar value={p.progress ?? 0} /></td>
                       <td className="px-4 py-3 text-gray-300 max-w-xs truncate">{p.future_plan || <span className="text-gray-600">—</span>}</td>
                       <td className="px-4 py-3 text-gray-300 max-w-xs truncate">{p.problems || <span className="text-gray-600">—</span>}</td>
                       {columns.map(col => {
@@ -393,7 +423,7 @@ function ProjectsTab() {
               ))}
               {projects.length === 0 && (
                 <tr>
-                  <td colSpan={7 + columns.length} className="px-4 py-12 text-center text-gray-600">
+                  <td colSpan={8 + columns.length} className="px-4 py-12 text-center text-gray-600">
                     {showArchived ? 'هیچ پروژه آرشیوشده‌ای وجود ندارد' : 'هیچ پروژه‌ای ثبت نشده است'}
                   </td>
                 </tr>

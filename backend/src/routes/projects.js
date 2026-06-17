@@ -40,20 +40,22 @@ router.get('/', requireAuth, (req, res) => {
 });
 
 router.post('/', requireAuth, requireRole('super_admin', 'section_head'), (req, res) => {
-  const { title, section_id, responsible_ids, status, future_plan, problems, row_order } = req.body;
+  const { title, section_id, responsible_ids, status, future_plan, problems, row_order, progress } = req.body;
   if (!title?.trim()) return res.status(400).json({ error: 'Title required' });
   const sectionId = req.user.role === 'section_head' ? req.user.section_id : section_id;
   if (!sectionId) return res.status(400).json({ error: 'section_id required' });
 
   const initialStatus = status || 'not_started';
+  const initialProgress = Math.min(100, Math.max(0, Number(progress) || 0));
   const maxOrder = db.prepare('SELECT COALESCE(MAX(row_order),0) as m FROM projects WHERE section_id = ?').get(sectionId).m;
   const result = db.prepare(
-    `INSERT INTO projects (title, section_id, status, future_plan, problems, row_order)
-     VALUES (?, ?, ?, ?, ?, ?)`
+    `INSERT INTO projects (title, section_id, status, future_plan, problems, row_order, progress)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`
   ).run(
     title.trim(), sectionId,
     initialStatus, future_plan || '', problems || '',
-    row_order ?? maxOrder + 1
+    row_order ?? maxOrder + 1,
+    initialProgress
   );
   const projectId = result.lastInsertRowid;
   recordStatusChange('project', projectId, null, initialStatus, req.user.id);
@@ -80,16 +82,18 @@ router.put('/:id', requireAuth, requireRole('super_admin', 'section_head'), (req
     return res.status(403).json({ error: 'Forbidden' });
   }
 
-  const { title, responsible_ids, status, future_plan, problems, row_order, custom_values } = req.body;
+  const { title, responsible_ids, status, future_plan, problems, row_order, custom_values, progress } = req.body;
   const newStatus = status ?? project.status;
+  const newProgress = progress != null ? Math.min(100, Math.max(0, Number(progress))) : (project.progress ?? 0);
   db.prepare(
-    `UPDATE projects SET title = ?, status = ?, future_plan = ?, problems = ?, row_order = ?, updated_at = datetime('now') WHERE id = ?`
+    `UPDATE projects SET title = ?, status = ?, future_plan = ?, problems = ?, row_order = ?, progress = ?, updated_at = datetime('now') WHERE id = ?`
   ).run(
     title ?? project.title,
     newStatus,
     future_plan ?? project.future_plan,
     problems ?? project.problems,
     row_order ?? project.row_order,
+    newProgress,
     req.params.id
   );
   recordStatusChange('project', req.params.id, project.status, newStatus, req.user.id);

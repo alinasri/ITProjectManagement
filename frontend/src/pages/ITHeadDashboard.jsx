@@ -172,9 +172,10 @@ function DrilldownPanel({ type, allProjects, allTasks, allPurchases, allTenders,
       title: 'پروژه‌ها',
       data: allProjects,
       columns: [
-        { label: 'عنوان',  render: r => <span className="text-gray-100">{r.title}</span> },
-        { label: 'بخش',    render: r => <span className="text-gray-400 text-xs">{sectionName(r.section_id)}</span> },
-        { label: 'وضعیت', render: r => <StatusPill status={r.status} /> },
+        { label: 'عنوان',   render: r => <span className="text-gray-100">{r.title}</span> },
+        { label: 'بخش',     render: r => <span className="text-gray-400 text-xs">{sectionName(r.section_id)}</span> },
+        { label: 'وضعیت',  render: r => <StatusPill status={r.status} /> },
+        { label: 'پیشرفت', render: r => <div className="w-32"><ProgressBar value={r.progress ?? 0} /></div> },
       ],
       onRowClick: r => navigate(`/section/${r.section_id}`),
     },
@@ -182,9 +183,10 @@ function DrilldownPanel({ type, allProjects, allTasks, allPurchases, allTenders,
       title: 'وظایف جاری',
       data: allTasks,
       columns: [
-        { label: 'عنوان',  render: r => <span className="text-gray-100">{r.title}</span> },
-        { label: 'بخش',    render: r => <span className="text-gray-400 text-xs">{sectionName(r.section_id)}</span> },
-        { label: 'وضعیت', render: r => <StatusPill status={r.status} /> },
+        { label: 'عنوان',   render: r => <span className="text-gray-100">{r.title}</span> },
+        { label: 'بخش',     render: r => <span className="text-gray-400 text-xs">{sectionName(r.section_id)}</span> },
+        { label: 'وضعیت',  render: r => <StatusPill status={r.status} /> },
+        { label: 'پیشرفت', render: r => <div className="w-32"><ProgressBar value={r.progress ?? 0} /></div> },
       ],
       onRowClick: r => navigate(`/section/${r.section_id}/ongoing-tasks`),
     },
@@ -340,6 +342,11 @@ function OverviewTab({ sections, allProjects, allTasks, allPurchases, allTenders
                     </div>
                   ))}
                 </div>
+                {sp.length > 0 && (
+                  <div className="mt-2">
+                    <ProgressBar value={Math.round(sp.reduce((s, p) => s + (p.progress ?? 0), 0) / sp.length)} />
+                  </div>
+                )}
               </div>
 
               <div className="border-t border-gray-800 my-3" />
@@ -364,6 +371,19 @@ function OverviewTab({ sections, allProjects, allTasks, allPurchases, allTenders
           );
         })}
       </div>
+    </div>
+  );
+}
+
+function ProgressBar({ value }) {
+  const pct = Math.min(100, Math.max(0, value || 0));
+  const color = pct === 100 ? 'bg-emerald-500' : pct >= 50 ? 'bg-indigo-500' : pct > 0 ? 'bg-blue-500' : 'bg-gray-600';
+  return (
+    <div className="flex items-center gap-2">
+      <div className="flex-1 bg-gray-700 rounded-full h-1.5 min-w-12">
+        <div className={`${color} h-1.5 rounded-full transition-all`} style={{ width: `${pct}%` }} />
+      </div>
+      <span className="text-xs text-gray-400 w-7 text-left shrink-0">{pct}%</span>
     </div>
   );
 }
