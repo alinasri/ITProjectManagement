@@ -6,6 +6,7 @@ import StatCard from '../components/StatCard';
 import StatusBadge, { STATUS_OPTIONS, STATUS_CONFIG as PROJECT_STATUS_CONFIG } from '../components/StatusBadge';
 import Modal from '../components/Modal';
 import ConfirmDialog from '../components/ConfirmDialog';
+import FilterBar from '../components/FilterBar';
 import MultiSelect from '../components/MultiSelect';
 import StatusHistoryTimeline from '../components/StatusHistoryTimeline';
 import { projects as projectsApi, personnel as personnelApi, customColumns as colsApi, ongoingTasks as ongoingTasksApi, contracts as contractsApi, purchases as purchasesApi, tenders as tendersApi } from '../api';
@@ -148,6 +149,8 @@ function ProjectsTab() {
   const [columns, setColumns] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showArchived, setShowArchived] = useState(false);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [statusFilter, setStatusFilter] = useState(null);
 
   const [editingId, setEditingId] = useState(null);
   const [editRow, setEditRow] = useState({});
@@ -194,6 +197,12 @@ function ProjectsTab() {
     on_hold: projects.filter(p => p.status === 'on_hold').length,
     completed: projects.filter(p => p.status === 'completed').length,
   };
+
+  const displayProjects = projects.filter(p => {
+    const matchesSearch = !searchTerm || p.title.includes(searchTerm);
+    const matchesStatus = !statusFilter || p.status === statusFilter;
+    return matchesSearch && matchesStatus;
+  });
 
   const today = new Date().toISOString().slice(0, 10);
 
@@ -289,7 +298,7 @@ function ProjectsTab() {
     <div>
       <PageHeader
         title={section?.name || 'پروژه‌ها'}
-        subtitle={`${stats.total} پروژه`}
+        subtitle={`${displayProjects.length} پروژه`}
         action={
           <div className="flex gap-2">
             <button
@@ -334,6 +343,14 @@ function ProjectsTab() {
         <StatCard label="تکمیل شده" value={stats.completed} icon="✅" color="emerald" />
       </div>
 
+      <FilterBar
+        searchTerm={searchTerm}
+        onSearchChange={setSearchTerm}
+        statuses={STATUS_OPTIONS}
+        activeStatus={statusFilter}
+        onStatusChange={setStatusFilter}
+      />
+
       {/* Table */}
       <div className="bg-gray-900 border border-gray-800 rounded-2xl overflow-hidden">
         <div className="overflow-x-auto scrollbar-thin">
@@ -364,7 +381,7 @@ function ProjectsTab() {
               </tr>
             </thead>
             <tbody>
-              {projects.map((p, idx) => {
+              {displayProjects.map((p, idx) => {
                 const isOverdue = p.due_date && p.status !== 'completed' && p.due_date < today;
                 return (
                 <tr key={p.id} className={`border-b border-gray-800/60 transition-colors group ${isOverdue ? 'bg-red-950/40 hover:bg-red-950/60' : 'hover:bg-gray-800/30'} ${p.is_archived ? 'opacity-60' : ''}`}>

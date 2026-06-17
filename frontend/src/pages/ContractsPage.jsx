@@ -3,6 +3,7 @@ import { useAuth } from '../context/AuthContext';
 import PageHeader from '../components/PageHeader';
 import StatCard from '../components/StatCard';
 import ConfirmDialog from '../components/ConfirmDialog';
+import FilterBar from '../components/FilterBar';
 import MultiSelect from '../components/MultiSelect';
 import PersianDatePicker from '../components/PersianDatePicker';
 import Modal from '../components/Modal';
@@ -50,6 +51,8 @@ export default function ContractsPage() {
   const [list, setList] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showArchived, setShowArchived] = useState(false);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [statusFilter, setStatusFilter] = useState(null);
 
   const [editingId, setEditingId] = useState(null);
   const [editRow, setEditRow] = useState({});
@@ -140,11 +143,17 @@ export default function ContractsPage() {
 
   const colCount = canEdit ? 9 : 8;
 
+  const displayList = list.filter(c => {
+    const matchesSearch = !searchTerm || c.title.includes(searchTerm) || (c.counterparty || '').includes(searchTerm);
+    const matchesStatus = !statusFilter || c.status === statusFilter;
+    return matchesSearch && matchesStatus;
+  });
+
   return (
     <div>
       <PageHeader
         title="قراردادها"
-        subtitle={`${list.length} مورد`}
+        subtitle={`${displayList.length} مورد`}
         action={
           <div className="flex items-center gap-2">
             <button
@@ -197,6 +206,14 @@ export default function ContractsPage() {
         );
       })()}
 
+      <FilterBar
+        searchTerm={searchTerm}
+        onSearchChange={setSearchTerm}
+        statuses={STATUS_OPTIONS}
+        activeStatus={statusFilter}
+        onStatusChange={setStatusFilter}
+      />
+
       <div className="bg-gray-900 border border-gray-800 rounded-2xl overflow-hidden">
         <div className="overflow-x-auto scrollbar-thin">
           <table className="w-full text-sm">
@@ -214,7 +231,7 @@ export default function ContractsPage() {
               </tr>
             </thead>
             <tbody>
-              {list.map((c, idx) => {
+              {displayList.map((c, idx) => {
                 const expiryTag = contractExpiryTag(c);
                 return (
                 <tr key={c.id} className={`border-b border-gray-800/60 transition-colors group ${

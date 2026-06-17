@@ -9,6 +9,7 @@ import Modal from '../components/Modal';
 import StatusHistoryTimeline from '../components/StatusHistoryTimeline';
 import { tenders as tendersApi } from '../api';
 import { useSections } from '../context/SectionsContext';
+import FilterBar from '../components/FilterBar';
 import { Plus, Trash2, PencilLine, Check, X, Gavel, Archive, History } from 'lucide-react';
 
 const STATUS_CONFIG = {
@@ -33,6 +34,8 @@ export default function TendersPage() {
   const [list, setList] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showArchived, setShowArchived] = useState(false);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [statusFilter, setStatusFilter] = useState(null);
 
   const [editingId, setEditingId] = useState(null);
   const [editRow, setEditRow] = useState({});
@@ -122,11 +125,17 @@ export default function TendersPage() {
 
   const colCount = canEdit ? 8 : 7;
 
+  const displayList = list.filter(t => {
+    const matchesSearch = !searchTerm || t.title.includes(searchTerm) || (t.winner || '').includes(searchTerm);
+    const matchesStatus = !statusFilter || t.status === statusFilter;
+    return matchesSearch && matchesStatus;
+  });
+
   return (
     <div>
       <PageHeader
         title="مناقصات"
-        subtitle={`${list.length} مورد`}
+        subtitle={`${displayList.length} مورد`}
         action={
           <div className="flex items-center gap-2">
             <button
@@ -160,6 +169,14 @@ export default function TendersPage() {
         ))}
       </div>
 
+      <FilterBar
+        searchTerm={searchTerm}
+        onSearchChange={setSearchTerm}
+        statuses={STATUS_OPTIONS}
+        activeStatus={statusFilter}
+        onStatusChange={setStatusFilter}
+      />
+
       <div className="bg-gray-900 border border-gray-800 rounded-2xl overflow-hidden">
         <div className="overflow-x-auto scrollbar-thin">
           <table className="w-full text-sm">
@@ -176,7 +193,7 @@ export default function TendersPage() {
               </tr>
             </thead>
             <tbody>
-              {list.map((t, idx) => (
+              {displayList.map((t, idx) => (
                 <tr key={t.id} className={`border-b border-gray-800/60 hover:bg-gray-800/30 transition-colors group ${t.is_archived ? 'opacity-60' : ''}`}>
                   <td className="px-4 py-3 text-gray-500 text-center">{idx + 1}</td>
 
