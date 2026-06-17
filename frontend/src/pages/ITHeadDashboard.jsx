@@ -16,6 +16,14 @@ import {
   ChevronLeft, ShoppingCart, Gavel, FileSignature,
   LayoutDashboard, FolderKanban, ListChecks, Building2,
 } from 'lucide-react';
+import DateObject from 'react-date-object';
+import persian from 'react-date-object/calendars/persian';
+import persian_fa from 'react-date-object/locales/persian_fa';
+
+function toPersianDate(isoStr) {
+  if (!isoStr) return null;
+  return new DateObject(new Date(isoStr + 'T00:00:00')).convert(persian, persian_fa).format('D MMMM YYYY');
+}
 
 const PROJECT_STATUS_COLORS = {
   not_started: '#6b7280',
@@ -166,6 +174,7 @@ function StatusPill({ status }) {
 
 function DrilldownPanel({ type, allProjects, allTasks, allPurchases, allTenders, allContracts, sections, navigate, onClose }) {
   const sectionName = (id) => sections.find(s => s.id === id)?.name ?? '—';
+  const today = new Date().toISOString().slice(0, 10);
 
   const configs = {
     projects: {
@@ -176,6 +185,12 @@ function DrilldownPanel({ type, allProjects, allTasks, allPurchases, allTenders,
         { label: 'بخش',     render: r => <span className="text-gray-400 text-xs">{sectionName(r.section_id)}</span> },
         { label: 'وضعیت',  render: r => <StatusPill status={r.status} /> },
         { label: 'پیشرفت', render: r => <div className="w-32"><ProgressBar value={r.progress ?? 0} /></div> },
+        { label: 'مهلت',   render: r => {
+          const overdue = r.due_date && r.status !== 'completed' && r.due_date < today;
+          return r.due_date
+            ? <span className={overdue ? 'text-red-400 text-xs font-medium' : 'text-gray-400 text-xs'}>{toPersianDate(r.due_date)}{overdue && ' ⚠'}</span>
+            : <span className="text-gray-600 text-xs">—</span>;
+        }},
       ],
       onRowClick: r => navigate(`/section/${r.section_id}`),
     },
@@ -183,10 +198,9 @@ function DrilldownPanel({ type, allProjects, allTasks, allPurchases, allTenders,
       title: 'وظایف جاری',
       data: allTasks,
       columns: [
-        { label: 'عنوان',   render: r => <span className="text-gray-100">{r.title}</span> },
-        { label: 'بخش',     render: r => <span className="text-gray-400 text-xs">{sectionName(r.section_id)}</span> },
-        { label: 'وضعیت',  render: r => <StatusPill status={r.status} /> },
-        { label: 'پیشرفت', render: r => <div className="w-32"><ProgressBar value={r.progress ?? 0} /></div> },
+        { label: 'عنوان',  render: r => <span className="text-gray-100">{r.title}</span> },
+        { label: 'بخش',    render: r => <span className="text-gray-400 text-xs">{sectionName(r.section_id)}</span> },
+        { label: 'وضعیت', render: r => <StatusPill status={r.status} /> },
       ],
       onRowClick: r => navigate(`/section/${r.section_id}/ongoing-tasks`),
     },
@@ -272,6 +286,7 @@ function DrilldownPanel({ type, allProjects, allTasks, allPurchases, allTenders,
 
 function OverviewTab({ sections, allProjects, allTasks, allPurchases, allTenders, allContracts, navigate }) {
   const [drilldown, setDrilldown] = useState(null);
+  const today = new Date().toISOString().slice(0, 10);
 
   const toggle = (type) => setDrilldown(prev => prev === type ? null : type);
 
@@ -316,6 +331,7 @@ function OverviewTab({ sections, allProjects, allTasks, allPurchases, allTenders
         {sections.map(s => {
           const sp = allProjects.filter(p => p.section_id === s.id);
           const st = allTasks.filter(t => t.section_id === s.id);
+          const overdueCount = sp.filter(p => p.due_date && p.status !== 'completed' && p.due_date < today).length;
           return (
             <button
               key={s.id}
@@ -346,6 +362,9 @@ function OverviewTab({ sections, allProjects, allTasks, allPurchases, allTenders
                   <div className="mt-2">
                     <ProgressBar value={Math.round(sp.reduce((s, p) => s + (p.progress ?? 0), 0) / sp.length)} />
                   </div>
+                )}
+                {overdueCount > 0 && (
+                  <p className="text-xs text-red-400 mt-1.5 font-medium">{overdueCount} پروژه از مهلت گذشته</p>
                 )}
               </div>
 

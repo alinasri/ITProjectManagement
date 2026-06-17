@@ -4,6 +4,11 @@ import { report as reportApi } from '../api';
 import DateObject from 'react-date-object';
 import persian from 'react-date-object/calendars/persian';
 import persian_fa from 'react-date-object/locales/persian_fa';
+
+function toPersianDate(isoStr) {
+  if (!isoStr) return null;
+  return new DateObject(new Date(isoStr + 'T00:00:00')).convert(persian, persian_fa).format('D MMMM YYYY');
+}
 import {
   ChevronDown, ChevronUp, Printer, Monitor,
   FolderKanban, ListChecks, ShoppingCart, Gavel, FileSignature, AlertTriangle,
@@ -77,6 +82,7 @@ function Section({ title, icon, count, badge, children, defaultOpen = true }) {
 function ProjectsSection({ projects, sections }) {
   const [openSections, setOpenSections] = useState({});
   const toggle = id => setOpenSections(p => ({ ...p, [id]: !p[id] }));
+  const today = new Date().toISOString().slice(0, 10);
 
   const completionPct = projects.length
     ? Math.round(projects.filter(p => p.status === 'completed').length / projects.length * 100) : 0;
@@ -133,8 +139,10 @@ function ProjectsSection({ projects, sections }) {
                 <div className="bg-gray-950/60 border-t border-gray-800/50">
                   <table className="w-full text-right text-sm">
                     <tbody className="divide-y divide-gray-800/30">
-                      {sp.map(p => (
-                        <tr key={p.id} className="hover:bg-gray-800/20">
+                      {sp.map(p => {
+                        const overdue = p.due_date && p.status !== 'completed' && p.due_date < today;
+                        return (
+                        <tr key={p.id} className={`hover:bg-gray-800/20 ${overdue ? 'bg-red-950/30' : ''}`}>
                           <td className="px-10 py-3 text-gray-300">{p.title}</td>
                           <td className="px-6 py-3 w-36"><StatusPill status={p.status} /></td>
                           <td className="px-6 py-3 w-40">
@@ -148,8 +156,14 @@ function ProjectsSection({ projects, sections }) {
                               <span className="text-xs text-gray-400 w-7 text-left shrink-0">{p.progress ?? 0}%</span>
                             </div>
                           </td>
+                          <td className="px-6 py-3 w-36 whitespace-nowrap">
+                            {p.due_date
+                              ? <span className={overdue ? 'text-red-400 text-xs font-medium' : 'text-gray-400 text-xs'}>{toPersianDate(p.due_date)}{overdue && ' ⚠'}</span>
+                              : <span className="text-gray-600 text-xs">—</span>}
+                          </td>
                         </tr>
-                      ))}
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>
@@ -329,10 +343,12 @@ export default function PublicReport() {
   const persianMonth = persianDate.format('MMMM YYYY');
   const persianFull  = persianDate.format('DD MMMM YYYY');
 
+  const today = new Date().toISOString().slice(0, 10);
   const completionPct = projects.length
     ? Math.round(projects.filter(p => p.status === 'completed').length / projects.length * 100) : 0;
   const blockedCount  = projects.filter(p => p.status === 'on_hold').length
                       + tasks.filter(t => t.status === 'on_hold').length;
+  const overdueCount  = projects.filter(p => p.due_date && p.status !== 'completed' && p.due_date < today).length;
 
   return (
     <div className="min-h-screen bg-gray-950 text-gray-100" dir="rtl">
@@ -419,16 +435,17 @@ export default function PublicReport() {
       <div className="max-w-5xl mx-auto px-6 py-8 space-y-5">
 
         {/* Attention banner */}
-        {blockedCount > 0 && (
+        {(blockedCount > 0 || overdueCount > 0) && (
           <div className="flex items-start gap-3 px-5 py-4 bg-amber-900/25 border border-amber-600/30 rounded-2xl">
             <AlertTriangle className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
             <div>
               <p className="text-sm font-semibold text-amber-200">
-                {blockedCount} مورد نیازمند توجه فوری
+                {blockedCount + overdueCount} مورد نیازمند توجه فوری
               </p>
               <p className="text-xs text-amber-300/70 mt-0.5">
-                {projects.filter(p => p.status === 'on_hold').length} پروژه و{' '}
-                {tasks.filter(t => t.status === 'on_hold').length} وظیفه جاری در حالت متوقف قرار دارند
+                {projects.filter(p => p.status === 'on_hold').length > 0 && <span>{projects.filter(p => p.status === 'on_hold').length} پروژه و {tasks.filter(t => t.status === 'on_hold').length} وظیفه جاری در حالت متوقف</span>}
+                {blockedCount > 0 && overdueCount > 0 && ' — '}
+                {overdueCount > 0 && <span>{overdueCount} پروژه از مهلت گذشته</span>}
               </p>
             </div>
           </div>

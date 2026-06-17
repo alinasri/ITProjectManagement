@@ -229,6 +229,11 @@ for (const table of ['projects', 'ongoing_tasks']) {
   } catch (_) {}
 }
 
+// Add due_date to projects
+try {
+  db.exec(`ALTER TABLE projects ADD COLUMN due_date TEXT`);
+} catch (_) {}
+
 // Report token for public shareable CEO report
 try {
   db.exec(`CREATE TABLE IF NOT EXISTS report_tokens (

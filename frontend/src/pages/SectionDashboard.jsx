@@ -11,6 +11,71 @@ import StatusHistoryTimeline from '../components/StatusHistoryTimeline';
 import { projects as projectsApi, personnel as personnelApi, customColumns as colsApi, ongoingTasks as ongoingTasksApi } from '../api';
 import { useSections } from '../context/SectionsContext';
 import { Plus, Trash2, PencilLine, Users, FolderKanban, Columns, Check, X, ListChecks, Archive, History } from 'lucide-react';
+import DateObject from 'react-date-object';
+import persian from 'react-date-object/calendars/persian';
+import persian_fa from 'react-date-object/locales/persian_fa';
+import gregorian from 'react-date-object/calendars/gregorian';
+
+function toPersianDate(isoStr) {
+  if (!isoStr) return null;
+  return new DateObject(new Date(isoStr + 'T00:00:00')).convert(persian, persian_fa).format('D MMMM YYYY');
+}
+
+const PERSIAN_MONTHS = ['فروردین','اردیبهشت','خرداد','تیر','مرداد','شهریور','مهر','آبان','آذر','دی','بهمن','اسفند'];
+
+function PersianDatePicker({ value, onChange }) {
+  const parse = (iso) => {
+    if (!iso) return { y: '', m: '', d: '' };
+    const dt = new DateObject(new Date(iso + 'T00:00:00')).convert(persian);
+    return { y: String(dt.year), m: String(dt.month.number), d: String(dt.day) };
+  };
+  const parsed = parse(value);
+  const [y, setY] = useState(parsed.y);
+  const [m, setM] = useState(parsed.m);
+  const [d, setD] = useState(parsed.d);
+
+  useEffect(() => {
+    const p = parse(value);
+    setY(p.y); setM(p.m); setD(p.d);
+  }, [value]);
+
+  const emit = (ny, nm, nd) => {
+    if (ny && nm && nd) {
+      try {
+        onChange(new DateObject({ year: +ny, month: +nm, day: +nd, calendar: persian })
+          .convert(gregorian).format('YYYY-MM-DD'));
+      } catch (_) { onChange(''); }
+    } else {
+      onChange('');
+    }
+  };
+
+  const curYear = new DateObject(new Date()).convert(persian).year;
+  const years = Array.from({ length: 10 }, (_, i) => curYear - 1 + i);
+  const sel = 'bg-gray-800 border border-gray-700 rounded px-1 py-1.5 text-white text-xs focus:outline-none focus:border-indigo-500';
+
+  return (
+    <div className="flex gap-1 items-center">
+      <select value={y} onChange={e => { setY(e.target.value); emit(e.target.value, m, d); }} className={`${sel} w-[4.5rem]`}>
+        <option value="">سال</option>
+        {years.map(yr => <option key={yr} value={yr}>{yr}</option>)}
+      </select>
+      <select value={m} onChange={e => { setM(e.target.value); emit(y, e.target.value, d); }} className={`${sel} w-24`}>
+        <option value="">ماه</option>
+        {PERSIAN_MONTHS.map((mn, i) => <option key={i+1} value={i+1}>{mn}</option>)}
+      </select>
+      <select value={d} onChange={e => { setD(e.target.value); emit(y, m, e.target.value); }} className={`${sel} w-12`}>
+        <option value="">روز</option>
+        {Array.from({ length: 31 }, (_, i) => i + 1).map(day => <option key={day} value={day}>{day}</option>)}
+      </select>
+      {value && (
+        <button type="button" onClick={() => { setY(''); setM(''); setD(''); onChange(''); }} className="text-gray-500 hover:text-gray-300 p-0.5">
+          <X className="w-3 h-3" />
+        </button>
+      )}
+    </div>
+  );
+}
 
 function ProgressBar({ value }) {
   const pct = Math.min(100, Math.max(0, value || 0));
@@ -127,6 +192,8 @@ function ProjectsTab() {
     completed: projects.filter(p => p.status === 'completed').length,
   };
 
+  const today = new Date().toISOString().slice(0, 10);
+
   const startEdit = (project) => {
     setEditingId(project.id);
     const cvMap = {};
@@ -136,6 +203,7 @@ function ProjectsTab() {
       responsible_ids: project.responsibles?.map(r => r.id) ?? [],
       status: project.status,
       progress: project.progress ?? 0,
+      due_date: project.due_date || '',
       future_plan: project.future_plan,
       problems: project.problems,
       custom_values: cvMap,
@@ -274,6 +342,7 @@ function ProjectsTab() {
                 <th className="px-4 py-3 text-right text-gray-400 font-medium min-w-36">مسئول اقدام</th>
                 <th className="px-4 py-3 text-right text-gray-400 font-medium min-w-32">آخرین وضعیت</th>
                 <th className="px-4 py-3 text-right text-gray-400 font-medium min-w-32">پیشرفت</th>
+                <th className="px-4 py-3 text-right text-gray-400 font-medium min-w-28">مهلت</th>
                 <th className="px-4 py-3 text-right text-gray-400 font-medium min-w-48">برنامه آتی</th>
                 <th className="px-4 py-3 text-right text-gray-400 font-medium min-w-48">مشکلات</th>
                 {columns.map(col => (
@@ -292,8 +361,10 @@ function ProjectsTab() {
               </tr>
             </thead>
             <tbody>
-              {projects.map((p, idx) => (
-                <tr key={p.id} className={`border-b border-gray-800/60 hover:bg-gray-800/30 transition-colors group ${p.is_archived ? 'opacity-60' : ''}`}>
+              {projects.map((p, idx) => {
+                const isOverdue = p.due_date && p.status !== 'completed' && p.due_date < today;
+                return (
+                <tr key={p.id} className={`border-b border-gray-800/60 transition-colors group ${isOverdue ? 'bg-red-950/40 hover:bg-red-950/60' : 'hover:bg-gray-800/30'} ${p.is_archived ? 'opacity-60' : ''}`}>
                   <td className="px-4 py-3 text-gray-500 text-center">{idx + 1}</td>
 
                   {editingId === p.id ? (
@@ -339,6 +410,12 @@ function ProjectsTab() {
                         </div>
                       </td>
                       <td className="px-2 py-2">
+                        <PersianDatePicker
+                          value={editRow.due_date}
+                          onChange={v => setEditRow(r => ({ ...r, due_date: v }))}
+                        />
+                      </td>
+                      <td className="px-2 py-2">
                         <input
                           className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-white text-sm focus:outline-none focus:border-indigo-500"
                           value={editRow.future_plan}
@@ -381,6 +458,11 @@ function ProjectsTab() {
                       <td className="px-4 py-3 text-gray-300">{p.responsibles?.length ? p.responsibles.map(r => r.name).join('، ') : <span className="text-gray-600">—</span>}</td>
                       <td className="px-4 py-3"><StatusBadge status={p.status} /></td>
                       <td className="px-4 py-3 min-w-32"><ProgressBar value={p.progress ?? 0} /></td>
+                      <td className="px-4 py-3 whitespace-nowrap">
+                        {p.due_date
+                          ? <span className={isOverdue ? 'text-red-400 text-sm font-medium' : 'text-gray-300 text-sm'}>{toPersianDate(p.due_date)}{isOverdue && <span className="mr-1.5 text-xs">(تأخیر)</span>}</span>
+                          : <span className="text-gray-600">—</span>}
+                      </td>
                       <td className="px-4 py-3 text-gray-300 max-w-xs truncate">{p.future_plan || <span className="text-gray-600">—</span>}</td>
                       <td className="px-4 py-3 text-gray-300 max-w-xs truncate">{p.problems || <span className="text-gray-600">—</span>}</td>
                       {columns.map(col => {
@@ -420,10 +502,11 @@ function ProjectsTab() {
                     </>
                   )}
                 </tr>
-              ))}
+              );
+              })}
               {projects.length === 0 && (
                 <tr>
-                  <td colSpan={8 + columns.length} className="px-4 py-12 text-center text-gray-600">
+                  <td colSpan={9 + columns.length} className="px-4 py-12 text-center text-gray-600">
                     {showArchived ? 'هیچ پروژه آرشیوشده‌ای وجود ندارد' : 'هیچ پروژه‌ای ثبت نشده است'}
                   </td>
                 </tr>
