@@ -14,7 +14,7 @@ import {
 } from 'recharts';
 import {
   ChevronLeft, ShoppingCart, Gavel, FileSignature,
-  LayoutDashboard, FolderKanban, ListChecks, Building2, AlertTriangle,
+  LayoutDashboard, FolderKanban, ListChecks, Building2, AlertTriangle, Clock,
 } from 'lucide-react';
 import DateObject from 'react-date-object';
 import persian from 'react-date-object/calendars/persian';
@@ -78,6 +78,7 @@ export default function ITHeadDashboard() {
   const [allPurchases, setAllPurchases] = useState([]);
   const [allTenders, setAllTenders] = useState([]);
   const [allContracts, setAllContracts] = useState([]);
+  const [deadlineChanges, setDeadlineChanges] = useState([]);
   const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
 
@@ -94,6 +95,8 @@ export default function ITHeadDashboard() {
         setAllContracts(coRes.data);
       })
       .finally(() => setLoading(false));
+
+    projectsApi.deadlineChanges().then(r => setDeadlineChanges(r.data)).catch(() => {});
   }, []);
 
   if (loading) return (
@@ -102,7 +105,7 @@ export default function ITHeadDashboard() {
     </div>
   );
 
-  const shared = { sections, allProjects, allTasks, allPurchases, allTenders, allContracts, navigate };
+  const shared = { sections, allProjects, allTasks, allPurchases, allTenders, allContracts, deadlineChanges, navigate };
 
   return (
     <div>
@@ -311,8 +314,10 @@ function DrilldownPanel({ type, allProjects, allTasks, allPurchases, allTenders,
   );
 }
 
-function OverviewTab({ sections, allProjects, allTasks, allPurchases, allTenders, allContracts, navigate }) {
+function OverviewTab({ sections, allProjects, allTasks, allPurchases, allTenders, allContracts, deadlineChanges, navigate }) {
   const [drilldown, setDrilldown] = useState(null);
+  const [showDeadlineChanges, setShowDeadlineChanges] = useState(false);
+  const [showContractExpiry, setShowContractExpiry] = useState(false);
   const today = new Date().toISOString().slice(0, 10);
 
   const toggle = (type) => setDrilldown(prev => prev === type ? null : type);
@@ -354,23 +359,113 @@ function OverviewTab({ sections, allProjects, allTasks, allPurchases, allTenders
       )}
 
       {(() => {
-        const expired  = allContracts.filter(c => contractExpiryTag(c) === 'expired').length;
-        const expiring = allContracts.filter(c => contractExpiryTag(c) === 'expiring').length;
-        if (!expired && !expiring) return null;
+        const expiredList  = allContracts.filter(c => contractExpiryTag(c) === 'expired');
+        const expiringList = allContracts.filter(c => contractExpiryTag(c) === 'expiring');
+        if (!expiredList.length && !expiringList.length) return null;
+        const alertContracts = [...expiredList, ...expiringList];
         return (
-          <div className="mb-6 flex items-start gap-3 px-5 py-4 bg-amber-900/20 border border-amber-600/30 rounded-2xl">
-            <AlertTriangle className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
-            <div>
-              <p className="text-sm font-semibold text-amber-200">هشدار انقضای قرارداد</p>
-              <p className="text-xs text-amber-300/70 mt-0.5">
-                {expired > 0 && <span>{expired} قرارداد منقضی شده</span>}
-                {expired > 0 && expiring > 0 && ' — '}
-                {expiring > 0 && <span>{expiring} قرارداد در ۶۰ روز آینده منقضی می‌شود</span>}
-              </p>
+          <div className="mb-6 bg-amber-900/20 border border-amber-600/30 rounded-2xl overflow-hidden">
+            <div className="flex items-start gap-3 px-5 py-4">
+              <AlertTriangle className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
+              <div className="flex-1">
+                <p className="text-sm font-semibold text-amber-200">هشدار انقضای قرارداد</p>
+                <p className="text-xs text-amber-300/70 mt-0.5">
+                  {expiredList.length > 0 && <span>{expiredList.length} قرارداد منقضی شده</span>}
+                  {expiredList.length > 0 && expiringList.length > 0 && ' — '}
+                  {expiringList.length > 0 && <span>{expiringList.length} قرارداد در ۶۰ روز آینده منقضی می‌شود</span>}
+                </p>
+              </div>
+              <button
+                onClick={() => setShowContractExpiry(v => !v)}
+                className="text-xs text-amber-400 hover:text-amber-300 transition-colors shrink-0 mt-0.5"
+              >
+                {showContractExpiry ? 'بستن' : 'مشاهده'}
+              </button>
             </div>
+            {showContractExpiry && (
+              <div className="border-t border-amber-800/40 overflow-x-auto">
+                <table className="w-full text-right text-sm">
+                  <thead>
+                    <tr className="border-b border-amber-800/30">
+                      <th className="px-5 py-2.5 text-xs font-medium text-amber-400/70">عنوان</th>
+                      <th className="px-5 py-2.5 text-xs font-medium text-amber-400/70">طرف قرارداد</th>
+                      <th className="px-5 py-2.5 text-xs font-medium text-amber-400/70">تاریخ پایان</th>
+                      <th className="px-5 py-2.5 text-xs font-medium text-amber-400/70">وضعیت</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {alertContracts.map(c => {
+                      const tag = contractExpiryTag(c);
+                      return (
+                        <tr key={c.id} className="border-b border-amber-800/20 last:border-0">
+                          <td className="px-5 py-2.5 text-gray-200">{c.title}</td>
+                          <td className="px-5 py-2.5 text-gray-400 text-xs">{c.counterparty || '—'}</td>
+                          <td className={`px-5 py-2.5 text-xs font-medium ${tag === 'expired' ? 'text-red-400' : 'text-amber-300'}`}>
+                            {c.end_date} ⚠
+                          </td>
+                          <td className="px-5 py-2.5 text-xs">
+                            <span className={tag === 'expired' ? 'text-red-400' : 'text-amber-300'}>
+                              {tag === 'expired' ? 'منقضی شده' : 'در حال انقضا'}
+                            </span>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
         );
       })()}
+
+      {deadlineChanges.length > 0 && (
+        <div className="mb-6 bg-blue-900/20 border border-blue-600/30 rounded-2xl overflow-hidden">
+          <div className="flex items-start gap-3 px-5 py-4">
+            <Clock className="w-5 h-5 text-blue-400 shrink-0 mt-0.5" />
+            <div className="flex-1">
+              <p className="text-sm font-semibold text-blue-200">تغییر مهلت پروژه‌ها</p>
+              <p className="text-xs text-blue-300/70 mt-0.5">
+                {deadlineChanges.length} مورد در ۳۰ روز گذشته تغییر کرده است
+              </p>
+            </div>
+            <button
+              onClick={() => setShowDeadlineChanges(v => !v)}
+              className="text-xs text-blue-400 hover:text-blue-300 transition-colors shrink-0 mt-0.5"
+            >
+              {showDeadlineChanges ? 'بستن' : 'مشاهده'}
+            </button>
+          </div>
+          {showDeadlineChanges && (
+            <div className="border-t border-blue-800/40 overflow-x-auto">
+              <table className="w-full text-right text-sm">
+                <thead>
+                  <tr className="border-b border-blue-800/30">
+                    <th className="px-5 py-2.5 text-xs font-medium text-blue-400/70">پروژه</th>
+                    <th className="px-5 py-2.5 text-xs font-medium text-blue-400/70">مهلت قبلی</th>
+                    <th className="px-5 py-2.5 text-xs font-medium text-blue-400/70">مهلت جدید</th>
+                    <th className="px-5 py-2.5 text-xs font-medium text-blue-400/70">تغییر داده شده توسط</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {deadlineChanges.map((row, i) => (
+                    <tr key={i} className="border-b border-blue-800/20 last:border-0">
+                      <td className="px-5 py-2.5 text-gray-200">{row.project_title}</td>
+                      <td className="px-5 py-2.5 text-gray-400 text-xs">
+                        {row.old_due_date ? toPersianDate(row.old_due_date) : '—'}
+                      </td>
+                      <td className="px-5 py-2.5 text-blue-300 text-xs font-medium">
+                        {row.new_due_date ? toPersianDate(row.new_due_date) : '—'}
+                      </td>
+                      <td className="px-5 py-2.5 text-gray-400 text-xs">{row.changed_by ?? '—'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
 
       <h2 className="text-sm font-semibold text-gray-400 mb-4 uppercase tracking-wider">بخش‌ها</h2>
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">

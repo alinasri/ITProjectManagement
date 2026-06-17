@@ -203,6 +203,9 @@ db.exec(`
 `);
 db.exec(`CREATE INDEX IF NOT EXISTS idx_status_history_entity ON status_history(entity_type, entity_id)`);
 
+// Add field column to status_history to support non-status field changes (e.g. due_date)
+try { db.exec(`ALTER TABLE status_history ADD COLUMN field TEXT`); } catch (_) {}
+
 // Add is_archived column to all entity tables
 for (const table of ['projects', 'ongoing_tasks', 'purchases', 'tenders', 'contracts']) {
   try {

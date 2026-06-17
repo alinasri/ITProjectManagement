@@ -44,6 +44,7 @@ export const projects = {
   remove: (id) => api.delete(`/projects/${id}`),
   getHistory: (id) => api.get(`/projects/${id}/history`),
   archive: (id, archive) => api.patch(`/projects/${id}/archive`, { archive }),
+  deadlineChanges: () => api.get('/projects/deadline-changes'),
 };
 
 export const customColumns = {

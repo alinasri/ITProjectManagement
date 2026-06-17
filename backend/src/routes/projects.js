@@ -1,7 +1,7 @@
 const express = require('express');
 const db = require('../db/schema');
 const { requireAuth, requireRole } = require('../middleware/auth');
-const { recordStatusChange } = require('../db/helpers');
+const { recordStatusChange, recordFieldChange } = require('../db/helpers');
 
 const router = express.Router();
 
@@ -65,6 +65,28 @@ router.post('/', requireAuth, requireRole('super_admin', 'section_head'), (req, 
   res.status(201).json(enrichProjects([project])[0]);
 });
 
+router.get('/deadline-changes', requireAuth, requireRole('super_admin', 'it_head'), (req, res) => {
+  const rows = db.prepare(`
+    SELECT
+      sh.entity_id   AS project_id,
+      sh.from_status AS old_due_date,
+      sh.to_status   AS new_due_date,
+      sh.changed_at,
+      p.title        AS project_title,
+      p.section_id,
+      u.username     AS changed_by
+    FROM status_history sh
+    JOIN projects p ON p.id = sh.entity_id
+    LEFT JOIN users u ON u.id = sh.changed_by
+    WHERE sh.entity_type = 'project'
+      AND sh.field = 'due_date'
+      AND sh.changed_at >= datetime('now', '-30 days')
+      AND p.is_deleted = 0
+    ORDER BY sh.changed_at DESC
+  `).all();
+  res.json(rows);
+});
+
 router.get('/:id/history', requireAuth, (req, res) => {
   const rows = db.prepare(
     `SELECT sh.*, u.username as changed_by_username
@@ -100,6 +122,9 @@ router.put('/:id', requireAuth, requireRole('super_admin', 'section_head'), (req
     req.params.id
   );
   recordStatusChange('project', req.params.id, project.status, newStatus, req.user.id);
+  if (newDueDate !== project.due_date) {
+    recordFieldChange('project', req.params.id, 'due_date', project.due_date, newDueDate, req.user.id);
+  }
 
   if (Array.isArray(responsible_ids)) setResponsibles('project_responsibles', 'project_id', req.params.id, responsible_ids);
 
