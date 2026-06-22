@@ -1,10 +1,16 @@
+// routes/tenders.js — Full CRUD for tenders.
+// Same multi-section pattern as purchases.js (a tender can belong to multiple sections).
+// Mounted at /api/tenders in app.js.
+
 const express = require('express');
 const db = require('../db/schema');
 const { requireAuth, requireRole } = require('../middleware/auth');
-const { recordStatusChange } = require('../db/helpers');
+const { recordStatusChange, setSections } = require('../db/helpers');
 
 const router = express.Router();
 
+// enrichTenders — attaches the sections array to each raw tender row.
+// JOINs through tender_sections to get the full section objects for each tender.
 function enrichTenders(rows) {
   return rows.map(r => {
     const sections = db.prepare(
@@ -16,27 +22,27 @@ function enrichTenders(rows) {
   });
 }
 
-function setSections(id, sectionIds) {
-  db.prepare('DELETE FROM tender_sections WHERE tender_id = ?').run(id);
-  const insert = db.prepare('INSERT INTO tender_sections (tender_id, section_id) VALUES (?, ?)');
-  sectionIds.forEach(sid => insert.run(id, sid));
-}
 
+// GET /api/tenders — lists tenders with role-based section filtering.
+// tender_admin and it_head can see all; section_head sees only their section's tenders.
 router.get('/', requireAuth, requireRole('super_admin', 'it_head', 'tender_admin', 'section_head'), (req, res) => {
   const showArchived = req.query.archived === '1' ? 1 : 0;
+  const filterSection = req.user.role === 'section_head' ? req.user.section_id : req.query.section_id;
   let rows;
-  if (req.user.role === 'section_head') {
+  if (filterSection) {
+    // JOIN is required because section membership lives in the tender_sections join table.
     rows = db.prepare(
       `SELECT DISTINCT t.* FROM tenders t
        JOIN tender_sections ts ON ts.tender_id = t.id
        WHERE ts.section_id = ? AND t.is_archived = ? AND t.is_deleted = 0 ORDER BY t.id`
-    ).all(req.user.section_id, showArchived);
+    ).all(filterSection, showArchived);
   } else {
     rows = db.prepare('SELECT * FROM tenders WHERE is_archived = ? AND is_deleted = 0 ORDER BY id').all(showArchived);
   }
   res.json(enrichTenders(rows));
 });
 
+// POST /api/tenders — creates a new tender. super_admin or tender_admin only.
 router.post('/', requireAuth, requireRole('super_admin', 'tender_admin'), (req, res) => {
   const { title, status, estimated_amount, deadline, winner, description, section_ids } = req.body;
   if (!title?.trim()) return res.status(400).json({ error: 'Title required' });
@@ -50,11 +56,12 @@ router.post('/', requireAuth, requireRole('super_admin', 'tender_admin'), (req, 
   );
   const id = result.lastInsertRowid;
   recordStatusChange('tender', id, null, initialStatus, req.user.id);
-  if (Array.isArray(section_ids)) setSections(id, section_ids);
+  if (Array.isArray(section_ids)) setSections('tender_sections', 'tender_id', id, section_ids);
   const row = db.prepare('SELECT * FROM tenders WHERE id = ?').get(id);
   res.status(201).json(enrichTenders([row])[0]);
 });
 
+// GET /api/tenders/:id/history — returns the status change log for one tender.
 router.get('/:id/history', requireAuth, requireRole('super_admin', 'it_head', 'tender_admin'), (req, res) => {
   const rows = db.prepare(
     `SELECT sh.*, u.username as changed_by_username
@@ -66,6 +73,7 @@ router.get('/:id/history', requireAuth, requireRole('super_admin', 'it_head', 't
   res.json(rows);
 });
 
+// PUT /api/tenders/:id — full update of a tender.
 router.put('/:id', requireAuth, requireRole('super_admin', 'tender_admin'), (req, res) => {
   const row = db.prepare('SELECT * FROM tenders WHERE id = ?').get(req.params.id);
   if (!row) return res.status(404).json({ error: 'Not found' });
@@ -85,11 +93,12 @@ router.put('/:id', requireAuth, requireRole('super_admin', 'tender_admin'), (req
   );
   recordStatusChange('tender', req.params.id, row.status, newStatus, req.user.id);
 
-  if (Array.isArray(section_ids)) setSections(req.params.id, section_ids);
+  if (Array.isArray(section_ids)) setSections('tender_sections', 'tender_id', req.params.id, section_ids);
 
   res.json(enrichTenders([db.prepare('SELECT * FROM tenders WHERE id = ?').get(req.params.id)])[0]);
 });
 
+// PATCH /api/tenders/:id/archive — archives or unarchives a tender.
 router.patch('/:id/archive', requireAuth, requireRole('super_admin', 'tender_admin'), (req, res) => {
   const row = db.prepare('SELECT * FROM tenders WHERE id = ?').get(req.params.id);
   if (!row) return res.status(404).json({ error: 'Not found' });
@@ -98,6 +107,7 @@ router.patch('/:id/archive', requireAuth, requireRole('super_admin', 'tender_adm
   res.json({ ok: true, is_archived: archive });
 });
 
+// DELETE /api/tenders/:id — soft-deletes a tender within the 10-minute window.
 router.delete('/:id', requireAuth, requireRole('super_admin', 'tender_admin'), (req, res) => {
   const row = db.prepare('SELECT * FROM tenders WHERE id = ?').get(req.params.id);
   if (!row) return res.status(404).json({ error: 'Not found' });

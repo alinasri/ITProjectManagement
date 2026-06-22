@@ -1,10 +1,17 @@
+// routes/ongoingTasks.js — Full CRUD for ongoing tasks.
+// Structurally identical to projects.js but simpler: no custom columns or due dates.
+// Mounted at /api/ongoing-tasks in app.js.
+
 const express = require('express');
 const db = require('../db/schema');
 const { requireAuth, requireRole } = require('../middleware/auth');
-const { recordStatusChange } = require('../db/helpers');
+const { recordStatusChange, setResponsibles } = require('../db/helpers');
 
 const router = express.Router();
 
+// enrichTasks — attaches the responsibles array to each raw task row.
+// Returns a new array of tasks, each with an added `responsibles: [{ id, name }]` field.
+// The spread { ...t, responsibles } copies all of t's fields and adds the new array.
 function enrichTasks(tasks) {
   return tasks.map(t => {
     const responsibles = db.prepare(
@@ -16,12 +23,10 @@ function enrichTasks(tasks) {
   });
 }
 
-function setResponsibles(table, fk, id, personnelIds) {
-  db.prepare(`DELETE FROM ${table} WHERE ${fk} = ?`).run(id);
-  const insert = db.prepare(`INSERT INTO ${table} (${fk}, personnel_id) VALUES (?, ?)`);
-  personnelIds.forEach(pid => insert.run(id, pid));
-}
 
+// GET /api/ongoing-tasks — lists tasks with role-based scoping and archive filter.
+// section_head always sees only their section's tasks.
+// ?archived=1 switches to showing archived tasks instead of active ones.
 router.get('/', requireAuth, (req, res) => {
   const { section_id } = req.query;
   const showArchived = req.query.archived === '1' ? 1 : 0;
@@ -36,6 +41,8 @@ router.get('/', requireAuth, (req, res) => {
   res.json(enrichTasks(tasks));
 });
 
+// POST /api/ongoing-tasks — creates a new task.
+// super_admin or section_head. section_head's section is always forced to their own.
 router.post('/', requireAuth, requireRole('super_admin', 'section_head'), (req, res) => {
   const { title, section_id, responsible_ids, status, note, progress } = req.body;
   if (!title?.trim()) return res.status(400).json({ error: 'Title required' });
@@ -49,12 +56,14 @@ router.post('/', requireAuth, requireRole('super_admin', 'section_head'), (req, 
      VALUES (?, ?, ?, ?, ?)`
   ).run(title.trim(), sectionId, initialStatus, note || '', initialProgress);
   const taskId = result.lastInsertRowid;
+  // Record the initial status with fromStatus = null (task had no previous state).
   recordStatusChange('ongoing_task', taskId, null, initialStatus, req.user.id);
   if (Array.isArray(responsible_ids)) setResponsibles('ongoing_task_responsibles', 'task_id', taskId, responsible_ids);
   const task = db.prepare('SELECT * FROM ongoing_tasks WHERE id = ?').get(taskId);
   res.status(201).json(enrichTasks([task])[0]);
 });
 
+// GET /api/ongoing-tasks/:id/history — returns the full status change log for one task.
 router.get('/:id/history', requireAuth, (req, res) => {
   const rows = db.prepare(
     `SELECT sh.*, u.username as changed_by_username
@@ -66,6 +75,7 @@ router.get('/:id/history', requireAuth, (req, res) => {
   res.json(rows);
 });
 
+// PUT /api/ongoing-tasks/:id — full update of a task.
 router.put('/:id', requireAuth, requireRole('super_admin', 'section_head'), (req, res) => {
   const task = db.prepare('SELECT * FROM ongoing_tasks WHERE id = ?').get(req.params.id);
   if (!task) return res.status(404).json({ error: 'Not found' });
@@ -74,6 +84,7 @@ router.put('/:id', requireAuth, requireRole('super_admin', 'section_head'), (req
   }
 
   const { title, responsible_ids, status, note, progress } = req.body;
+  // ?? keeps the existing value when the field is not included in the request body.
   const newStatus = status ?? task.status;
   const newProgress = progress != null ? Math.min(100, Math.max(0, Number(progress))) : (task.progress ?? 0);
   db.prepare(
@@ -92,6 +103,7 @@ router.put('/:id', requireAuth, requireRole('super_admin', 'section_head'), (req
   res.json(enrichTasks([db.prepare('SELECT * FROM ongoing_tasks WHERE id = ?').get(req.params.id)])[0]);
 });
 
+// PATCH /api/ongoing-tasks/:id/archive — archives or unarchives a task.
 router.patch('/:id/archive', requireAuth, requireRole('super_admin', 'section_head'), (req, res) => {
   const task = db.prepare('SELECT * FROM ongoing_tasks WHERE id = ?').get(req.params.id);
   if (!task) return res.status(404).json({ error: 'Not found' });
@@ -103,6 +115,8 @@ router.patch('/:id/archive', requireAuth, requireRole('super_admin', 'section_he
   res.json({ ok: true, is_archived: archive });
 });
 
+// DELETE /api/ongoing-tasks/:id — soft-deletes a task (sets is_deleted = 1).
+// The 10-minute age window prevents accidental deletion of established records.
 router.delete('/:id', requireAuth, requireRole('super_admin', 'section_head'), (req, res) => {
   const task = db.prepare('SELECT * FROM ongoing_tasks WHERE id = ?').get(req.params.id);
   if (!task) return res.status(404).json({ error: 'Not found' });

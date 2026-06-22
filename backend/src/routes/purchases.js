@@ -1,10 +1,17 @@
+// routes/purchases.js — Full CRUD for purchases.
+// Unlike projects (one section), a purchase can belong to multiple sections via the
+// purchase_sections join table. Mounted at /api/purchases in app.js.
+
 const express = require('express');
 const db = require('../db/schema');
 const { requireAuth, requireRole } = require('../middleware/auth');
-const { recordStatusChange } = require('../db/helpers');
+const { recordStatusChange, setSections } = require('../db/helpers');
 
 const router = express.Router();
 
+// enrichPurchases — attaches the sections array to each raw purchase row.
+// JOINs through purchase_sections to get the full section objects for each purchase.
+// Returns a new array; each purchase gains a `sections: [{ id, name }]` field.
 function enrichPurchases(rows) {
   return rows.map(r => {
     const sections = db.prepare(
@@ -16,27 +23,30 @@ function enrichPurchases(rows) {
   });
 }
 
-function setSections(id, sectionIds) {
-  db.prepare('DELETE FROM purchase_sections WHERE purchase_id = ?').run(id);
-  const insert = db.prepare('INSERT INTO purchase_sections (purchase_id, section_id) VALUES (?, ?)');
-  sectionIds.forEach(sid => insert.run(id, sid));
-}
 
+// GET /api/purchases — lists purchases with role-based section filtering.
+// section_head sees only purchases linked to their section (via the join table).
+// Others can filter by ?section_id= or see all.
 router.get('/', requireAuth, requireRole('super_admin', 'it_head', 'purchase_admin', 'section_head'), (req, res) => {
   const showArchived = req.query.archived === '1' ? 1 : 0;
+  const filterSection = req.user.role === 'section_head' ? req.user.section_id : req.query.section_id;
   let rows;
-  if (req.user.role === 'section_head') {
+  if (filterSection) {
+    // JOIN query required because the section link is in the purchase_sections table,
+    // not directly on the purchase row. DISTINCT prevents duplicates if a purchase is
+    // linked to multiple sections that all match (shouldn't happen here, but safe practice).
     rows = db.prepare(
       `SELECT DISTINCT p.* FROM purchases p
        JOIN purchase_sections ps ON ps.purchase_id = p.id
        WHERE ps.section_id = ? AND p.is_archived = ? AND p.is_deleted = 0 ORDER BY p.id`
-    ).all(req.user.section_id, showArchived);
+    ).all(filterSection, showArchived);
   } else {
     rows = db.prepare('SELECT * FROM purchases WHERE is_archived = ? AND is_deleted = 0 ORDER BY id').all(showArchived);
   }
   res.json(enrichPurchases(rows));
 });
 
+// POST /api/purchases — creates a new purchase. super_admin or purchase_admin only.
 router.post('/', requireAuth, requireRole('super_admin', 'purchase_admin'), (req, res) => {
   const { title, status, supplier, amount, purchase_date, description, section_ids } = req.body;
   if (!title?.trim()) return res.status(400).json({ error: 'Title required' });
@@ -50,11 +60,13 @@ router.post('/', requireAuth, requireRole('super_admin', 'purchase_admin'), (req
   );
   const id = result.lastInsertRowid;
   recordStatusChange('purchase', id, null, initialStatus, req.user.id);
-  if (Array.isArray(section_ids)) setSections(id, section_ids);
+  // Link the purchase to all provided sections via the purchase_sections join table.
+  if (Array.isArray(section_ids)) setSections('purchase_sections', 'purchase_id', id, section_ids);
   const row = db.prepare('SELECT * FROM purchases WHERE id = ?').get(id);
   res.status(201).json(enrichPurchases([row])[0]);
 });
 
+// GET /api/purchases/:id/history — returns the status change log for one purchase.
 router.get('/:id/history', requireAuth, requireRole('super_admin', 'it_head', 'purchase_admin'), (req, res) => {
   const rows = db.prepare(
     `SELECT sh.*, u.username as changed_by_username
@@ -66,6 +78,7 @@ router.get('/:id/history', requireAuth, requireRole('super_admin', 'it_head', 'p
   res.json(rows);
 });
 
+// PUT /api/purchases/:id — full update of a purchase.
 router.put('/:id', requireAuth, requireRole('super_admin', 'purchase_admin'), (req, res) => {
   const row = db.prepare('SELECT * FROM purchases WHERE id = ?').get(req.params.id);
   if (!row) return res.status(404).json({ error: 'Not found' });
@@ -85,11 +98,12 @@ router.put('/:id', requireAuth, requireRole('super_admin', 'purchase_admin'), (r
   );
   recordStatusChange('purchase', req.params.id, row.status, newStatus, req.user.id);
 
-  if (Array.isArray(section_ids)) setSections(req.params.id, section_ids);
+  if (Array.isArray(section_ids)) setSections('purchase_sections', 'purchase_id', req.params.id, section_ids);
 
   res.json(enrichPurchases([db.prepare('SELECT * FROM purchases WHERE id = ?').get(req.params.id)])[0]);
 });
 
+// PATCH /api/purchases/:id/archive — archives or unarchives a purchase.
 router.patch('/:id/archive', requireAuth, requireRole('super_admin', 'purchase_admin'), (req, res) => {
   const row = db.prepare('SELECT * FROM purchases WHERE id = ?').get(req.params.id);
   if (!row) return res.status(404).json({ error: 'Not found' });
@@ -98,6 +112,7 @@ router.patch('/:id/archive', requireAuth, requireRole('super_admin', 'purchase_a
   res.json({ ok: true, is_archived: archive });
 });
 
+// DELETE /api/purchases/:id — soft-deletes a purchase within the 10-minute window.
 router.delete('/:id', requireAuth, requireRole('super_admin', 'purchase_admin'), (req, res) => {
   const row = db.prepare('SELECT * FROM purchases WHERE id = ?').get(req.params.id);
   if (!row) return res.status(404).json({ error: 'Not found' });

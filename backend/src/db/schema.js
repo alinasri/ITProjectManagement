@@ -1,16 +1,34 @@
+// db/schema.js — Opens the SQLite database, defines the schema, runs migrations, and seeds
+// initial data. Exports the single shared db connection used by every route file.
+// This file runs once at startup; require() caches the result so subsequent imports
+// receive the same already-initialized connection.
+
 const { DatabaseSync } = require('node:sqlite');
 const bcrypt = require('bcryptjs');
 const path = require('path');
 const fs = require('fs');
 
+// DATA_DIR can be overridden via environment variable so the database file can be placed
+// outside the project directory in production (e.g. a mounted volume).
 const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, '../../data');
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
 
+// Open (or create) the SQLite database file.
+// SQLite is file-based — no separate database server process is needed.
 const db = new DatabaseSync(path.join(DATA_DIR, 'it_pm.db'));
 
+// WAL (Write-Ahead Logging) mode: improves performance for concurrent reads.
 db.exec("PRAGMA journal_mode = WAL");
+// Enforce foreign key constraints (e.g. a project cannot reference a non-existent section).
+// SQLite ignores foreign keys by default — this must be enabled explicitly.
 db.exec("PRAGMA foreign_keys = ON");
 
+// ── Base schema ───────────────────────────────────────────────────────────────
+// Defines the complete current schema for brand-new databases.
+// Existing databases are upgraded to this state via migrations below.
+
+// CREATE TABLE IF NOT EXISTS: safe to run on every startup — does nothing if the table
+// already exists. This is the canonical definition of every table in the system.
 db.exec(`
   CREATE TABLE IF NOT EXISTS sections (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -23,15 +41,19 @@ db.exec(`
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     username TEXT UNIQUE NOT NULL,
     password_hash TEXT NOT NULL,
-    role TEXT NOT NULL CHECK(role IN ('super_admin','it_head','section_head')),
+    -- CHECK constraint: only these exact strings are valid values for role.
+    role TEXT NOT NULL CHECK(role IN ('super_admin','it_head','section_head','purchase_admin','tender_admin','contract_admin')),
     section_id INTEGER REFERENCES sections(id) ON DELETE SET NULL,
     must_change_password INTEGER DEFAULT 0,
+    is_active INTEGER NOT NULL DEFAULT 1,
+    is_deleted INTEGER NOT NULL DEFAULT 0,
     created_at TEXT DEFAULT (datetime('now'))
   );
 
   CREATE TABLE IF NOT EXISTS personnel (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL,
+    -- ON DELETE CASCADE: if the section is deleted, all its personnel are also deleted.
     section_id INTEGER NOT NULL REFERENCES sections(id) ON DELETE CASCADE,
     created_at TEXT DEFAULT (datetime('now'))
   );
@@ -40,12 +62,15 @@ db.exec(`
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     title TEXT NOT NULL,
     section_id INTEGER NOT NULL REFERENCES sections(id) ON DELETE CASCADE,
-    responsible_id INTEGER REFERENCES personnel(id) ON DELETE SET NULL,
     status TEXT NOT NULL DEFAULT 'not_started'
       CHECK(status IN ('not_started','in_progress','on_hold','completed')),
     future_plan TEXT DEFAULT '',
     problems TEXT DEFAULT '',
     row_order INTEGER DEFAULT 0,
+    progress INTEGER NOT NULL DEFAULT 0,
+    due_date TEXT,
+    is_archived INTEGER NOT NULL DEFAULT 0,
+    is_deleted INTEGER NOT NULL DEFAULT 0,    -- soft-delete flag; row is never physically removed
     created_at TEXT DEFAULT (datetime('now')),
     updated_at TEXT DEFAULT (datetime('now'))
   );
@@ -62,6 +87,8 @@ db.exec(`
     project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
     column_id INTEGER NOT NULL REFERENCES custom_columns(id) ON DELETE CASCADE,
     value TEXT DEFAULT '',
+    -- UNIQUE ensures there is at most one value per (project, column) pair.
+    -- This enables the ON CONFLICT upsert pattern used in routes/projects.js.
     UNIQUE(project_id, column_id)
   );
 
@@ -69,14 +96,18 @@ db.exec(`
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     title TEXT NOT NULL,
     section_id INTEGER NOT NULL REFERENCES sections(id) ON DELETE CASCADE,
-    responsible_id INTEGER REFERENCES personnel(id) ON DELETE SET NULL,
     status TEXT NOT NULL DEFAULT 'in_progress'
       CHECK(status IN ('pending','in_progress','on_hold','completed')),
     note TEXT DEFAULT '',
+    progress INTEGER NOT NULL DEFAULT 0,
+    is_archived INTEGER NOT NULL DEFAULT 0,
+    is_deleted INTEGER NOT NULL DEFAULT 0,
     created_at TEXT DEFAULT (datetime('now')),
     updated_at TEXT DEFAULT (datetime('now'))
   );
 
+  -- Join tables for many-to-many: one project/task can have multiple responsibles.
+  -- PRIMARY KEY (project_id, personnel_id) prevents duplicate assignments.
   CREATE TABLE IF NOT EXISTS project_responsibles (
     project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
     personnel_id INTEGER NOT NULL REFERENCES personnel(id) ON DELETE CASCADE,
@@ -98,10 +129,13 @@ db.exec(`
     amount TEXT DEFAULT '',
     purchase_date TEXT DEFAULT '',
     description TEXT DEFAULT '',
+    is_archived INTEGER NOT NULL DEFAULT 0,
+    is_deleted INTEGER NOT NULL DEFAULT 0,
     created_at TEXT DEFAULT (datetime('now')),
     updated_at TEXT DEFAULT (datetime('now'))
   );
 
+  -- Join table: one purchase can belong to multiple sections.
   CREATE TABLE IF NOT EXISTS purchase_sections (
     purchase_id INTEGER NOT NULL REFERENCES purchases(id) ON DELETE CASCADE,
     section_id INTEGER NOT NULL REFERENCES sections(id) ON DELETE CASCADE,
@@ -117,6 +151,8 @@ db.exec(`
     deadline TEXT DEFAULT '',
     winner TEXT DEFAULT '',
     description TEXT DEFAULT '',
+    is_archived INTEGER NOT NULL DEFAULT 0,
+    is_deleted INTEGER NOT NULL DEFAULT 0,
     created_at TEXT DEFAULT (datetime('now')),
     updated_at TEXT DEFAULT (datetime('now'))
   );
@@ -137,6 +173,8 @@ db.exec(`
     end_date TEXT DEFAULT '',
     amount TEXT DEFAULT '',
     description TEXT DEFAULT '',
+    is_archived INTEGER NOT NULL DEFAULT 0,
+    is_deleted INTEGER NOT NULL DEFAULT 0,
     created_at TEXT DEFAULT (datetime('now')),
     updated_at TEXT DEFAULT (datetime('now'))
   );
@@ -146,32 +184,107 @@ db.exec(`
     section_id INTEGER NOT NULL REFERENCES sections(id) ON DELETE CASCADE,
     PRIMARY KEY (contract_id, section_id)
   );
+
+  -- Audit trail: every status change (and some field changes) for every entity is logged here.
+  -- entity_type + entity_id together identify which record changed.
+  -- field is NULL for status changes; populated for field changes (e.g. 'due_date').
+  CREATE TABLE IF NOT EXISTS status_history (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    entity_type TEXT NOT NULL CHECK(entity_type IN ('project','ongoing_task','purchase','tender','contract')),
+    entity_id   INTEGER NOT NULL,
+    field       TEXT,
+    from_status TEXT,
+    to_status   TEXT NOT NULL,
+    changed_by  INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    changed_at  TEXT DEFAULT (datetime('now'))
+  );
+
+  -- Index speeds up the most common query: "give me all history for entity X".
+  CREATE INDEX IF NOT EXISTS idx_status_history_entity ON status_history(entity_type, entity_id);
+
+  -- Stores the single public report token. id = 1 always (there is only one token at a time).
+  CREATE TABLE IF NOT EXISTS report_tokens (
+    id      INTEGER PRIMARY KEY DEFAULT 1,
+    token   TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
 `);
 
-// Migrate single responsible_id columns to many-to-many join tables
-// (projects/ongoing_tasks can each have more than one مسئول)
-for (const [table, joinTable, fk] of [
-  ['projects', 'project_responsibles', 'project_id'],
-  ['ongoing_tasks', 'ongoing_task_responsibles', 'task_id'],
-]) {
-  const hasResponsibleId = db.prepare(`PRAGMA table_info(${table})`).all().some(c => c.name === 'responsible_id');
-  if (hasResponsibleId) {
-    db.exec(`INSERT OR IGNORE INTO ${joinTable} (${fk}, personnel_id)
-             SELECT id, responsible_id FROM ${table} WHERE responsible_id IS NOT NULL`);
-    db.exec(`ALTER TABLE ${table} DROP COLUMN responsible_id`);
-  }
+// ── Migration runner ──────────────────────────────────────────────────────────
+// A migration is a one-time database change (adding a column, restructuring a table).
+// The _migrations table records which migrations have already been applied.
+// On every startup: skip already-applied migrations, run new ones, record them.
+
+db.exec(`
+  CREATE TABLE IF NOT EXISTS _migrations (
+    id     TEXT PRIMARY KEY,
+    ran_at TEXT NOT NULL DEFAULT (datetime('now'))
+  )
+`);
+
+// hasRun: returns true if migration `id` has already been applied to this database.
+function hasRun(id) {
+  return !!db.prepare('SELECT 1 FROM _migrations WHERE id = ?').get(id);
 }
 
-// Add status column to ongoing_tasks for existing databases
-try {
+// stamp: records that migration `id` has been applied so it is never run again.
+function stamp(id) {
+  db.prepare('INSERT OR IGNORE INTO _migrations (id) VALUES (?)').run(id);
+}
+
+// runMigration: the entry point for applying a migration.
+// If it has already run, this is a no-op. Otherwise: run fn(), then stamp it.
+function runMigration(id, fn) {
+  if (hasRun(id)) return;
+  fn();
+  stamp(id);
+}
+
+// Bootstrap: if due_date already exists in projects but _migrations is empty, this is an
+// existing database that was upgraded via the old try/catch approach. Stamp all historical
+// migrations as "already done" so they don't attempt to re-run.
+const projectCols = db.prepare('PRAGMA table_info(projects)').all().map(c => c.name);
+if (projectCols.includes('due_date') && db.prepare('SELECT COUNT(*) as c FROM _migrations').get().c === 0) {
+  [
+    '001_migrate_responsibles',
+    '002_add_status_to_ongoing_tasks',
+    '003_add_registry_admin_roles',
+    '004_add_field_to_status_history',
+    '005_add_is_archived',
+    '006_add_is_deleted',
+    '007_add_is_active_to_users',
+    '008_add_progress_columns',
+    '009_add_due_date_to_projects',
+  ].forEach(stamp);
+}
+
+// ── Migrations ────────────────────────────────────────────────────────────────
+// Add new migrations here. Each runs exactly once, fails loudly if something
+// goes wrong, and is recorded in _migrations so it never runs again.
+
+// Moved responsible_id from the main tables into join tables (one-to-many → many-to-many).
+runMigration('001_migrate_responsibles', () => {
+  for (const [table, joinTable, fk] of [
+    ['projects', 'project_responsibles', 'project_id'],
+    ['ongoing_tasks', 'ongoing_task_responsibles', 'task_id'],
+  ]) {
+    const cols = db.prepare(`PRAGMA table_info(${table})`).all().map(c => c.name);
+    if (cols.includes('responsible_id')) {
+      db.exec(`INSERT OR IGNORE INTO ${joinTable} (${fk}, personnel_id)
+               SELECT id, responsible_id FROM ${table} WHERE responsible_id IS NOT NULL`);
+      db.exec(`ALTER TABLE ${table} DROP COLUMN responsible_id`);
+    }
+  }
+});
+
+runMigration('002_add_status_to_ongoing_tasks', () => {
   db.exec(`ALTER TABLE ongoing_tasks ADD COLUMN status TEXT NOT NULL DEFAULT 'in_progress'
     CHECK(status IN ('pending','in_progress','on_hold','completed'))`);
-} catch (_) {}
+});
 
-// Migrate users.role CHECK constraint to allow the new registry-admin roles
-// (SQLite can't ALTER a CHECK constraint in place — recreate the table)
-const usersTableSql = db.prepare(`SELECT sql FROM sqlite_master WHERE type='table' AND name='users'`).get().sql;
-if (!usersTableSql.includes('purchase_admin')) {
+// Recreates the users table to add new allowed role values to the CHECK constraint.
+// SQLite does not support ALTER TABLE ... MODIFY COLUMN, so the table must be rebuilt.
+runMigration('003_add_registry_admin_roles', () => {
   db.exec(`
     CREATE TABLE users_new (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -187,66 +300,42 @@ if (!usersTableSql.includes('purchase_admin')) {
     DROP TABLE users;
     ALTER TABLE users_new RENAME TO users;
   `);
-}
+});
 
-// Status history audit trail
-db.exec(`
-  CREATE TABLE IF NOT EXISTS status_history (
-    id          INTEGER PRIMARY KEY AUTOINCREMENT,
-    entity_type TEXT NOT NULL CHECK(entity_type IN ('project','ongoing_task','purchase','tender','contract')),
-    entity_id   INTEGER NOT NULL,
-    from_status TEXT,
-    to_status   TEXT NOT NULL,
-    changed_by  INTEGER REFERENCES users(id) ON DELETE SET NULL,
-    changed_at  TEXT DEFAULT (datetime('now'))
-  )
-`);
-db.exec(`CREATE INDEX IF NOT EXISTS idx_status_history_entity ON status_history(entity_type, entity_id)`);
+runMigration('004_add_field_to_status_history', () => {
+  db.exec(`ALTER TABLE status_history ADD COLUMN field TEXT`);
+});
 
-// Add field column to status_history to support non-status field changes (e.g. due_date)
-try { db.exec(`ALTER TABLE status_history ADD COLUMN field TEXT`); } catch (_) {}
-
-// Add is_archived column to all entity tables
-for (const table of ['projects', 'ongoing_tasks', 'purchases', 'tenders', 'contracts']) {
-  try {
+runMigration('005_add_is_archived', () => {
+  for (const table of ['projects', 'ongoing_tasks', 'purchases', 'tenders', 'contracts']) {
     db.exec(`ALTER TABLE ${table} ADD COLUMN is_archived INTEGER NOT NULL DEFAULT 0`);
-  } catch (_) {}
-}
+  }
+});
 
-// Add is_deleted column to all entity tables (soft delete within 10-minute window)
-for (const table of ['projects', 'ongoing_tasks', 'purchases', 'tenders', 'contracts', 'users']) {
-  try {
+runMigration('006_add_is_deleted', () => {
+  for (const table of ['projects', 'ongoing_tasks', 'purchases', 'tenders', 'contracts', 'users']) {
     db.exec(`ALTER TABLE ${table} ADD COLUMN is_deleted INTEGER NOT NULL DEFAULT 0`);
-  } catch (_) {}
-}
+  }
+});
 
-// Add is_active column to users (disable/enable without deleting)
-try {
+runMigration('007_add_is_active_to_users', () => {
   db.exec('ALTER TABLE users ADD COLUMN is_active INTEGER NOT NULL DEFAULT 1');
-} catch (_) {}
+});
 
-// Add progress column (0-100) to projects and ongoing_tasks
-for (const table of ['projects', 'ongoing_tasks']) {
-  try {
+runMigration('008_add_progress_columns', () => {
+  for (const table of ['projects', 'ongoing_tasks']) {
     db.exec(`ALTER TABLE ${table} ADD COLUMN progress INTEGER NOT NULL DEFAULT 0`);
-  } catch (_) {}
-}
+  }
+});
 
-// Add due_date to projects
-try {
+runMigration('009_add_due_date_to_projects', () => {
   db.exec(`ALTER TABLE projects ADD COLUMN due_date TEXT`);
-} catch (_) {}
+});
 
-// Report token for public shareable CEO report
-try {
-  db.exec(`CREATE TABLE IF NOT EXISTS report_tokens (
-    id      INTEGER PRIMARY KEY DEFAULT 1,
-    token   TEXT NOT NULL,
-    created_at TEXT NOT NULL DEFAULT (datetime('now'))
-  )`);
-} catch (_) {}
+// ── Seed initial data ─────────────────────────────────────────────────────────
+// On a brand-new empty database, insert default sections and an admin account so the
+// app is usable immediately. Runs only once (the IF check prevents re-seeding).
 
-// Seed initial data only once
 const existing = db.prepare('SELECT COUNT(*) as c FROM sections').get();
 if (existing.c === 0) {
   const insertSection = db.prepare('INSERT INTO sections (name) VALUES (?)');
@@ -258,10 +347,15 @@ if (existing.c === 0) {
     'طراحی و توسعه',
   ].forEach(name => insertSection.run(name));
 
+  // bcrypt.hashSync hashes the password one-way — it cannot be reversed.
+  // The number 10 is the "cost factor": higher = slower to hash = harder to brute-force.
+  // must_change_password = 1 forces the admin to set their own password on first login.
   const hash = bcrypt.hashSync('admin123', 10);
   db.prepare(
     `INSERT INTO users (username, password_hash, role, must_change_password) VALUES (?, ?, 'super_admin', 1)`
   ).run('admin', hash);
 }
 
+// Export the single shared database connection.
+// Node's require() caches this module, so every file that imports it gets the same object.
 module.exports = db;
