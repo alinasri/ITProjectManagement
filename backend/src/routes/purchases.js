@@ -19,13 +19,14 @@ function enrichPurchases(rows) {
 
 router.get('/', requireAuth, requireRole('super_admin', 'it_head', 'purchase_admin', 'section_head'), (req, res) => {
   const showArchived = req.query.archived === '1' ? 1 : 0;
+  const filterSection = req.user.role === 'section_head' ? req.user.section_id : req.query.section_id;
   let rows;
-  if (req.user.role === 'section_head') {
+  if (filterSection) {
     rows = db.prepare(
       `SELECT DISTINCT p.* FROM purchases p
        JOIN purchase_sections ps ON ps.purchase_id = p.id
        WHERE ps.section_id = ? AND p.is_archived = ? AND p.is_deleted = 0 ORDER BY p.id`
-    ).all(req.user.section_id, showArchived);
+    ).all(filterSection, showArchived);
   } else {
     rows = db.prepare('SELECT * FROM purchases WHERE is_archived = ? AND is_deleted = 0 ORDER BY id').all(showArchived);
   }

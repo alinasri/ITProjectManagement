@@ -984,12 +984,12 @@ function RegistriesTab() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const sid = Number(sectionId);
-    Promise.all([contractsApi.list(), purchasesApi.list(), tendersApi.list()])
+    const params = { section_id: sectionId };
+    Promise.all([contractsApi.list(params), purchasesApi.list(params), tendersApi.list(params)])
       .then(([cRes, pRes, tRes]) => {
-        setContracts(cRes.data.filter(c => c.sections?.some(s => s.id === sid)));
-        setPurchases(pRes.data.filter(p => p.sections?.some(s => s.id === sid)));
-        setTenders(tRes.data.filter(t => t.sections?.some(s => s.id === sid)));
+        setContracts(cRes.data);
+        setPurchases(pRes.data);
+        setTenders(tRes.data);
       })
       .finally(() => setLoading(false));
   }, [sectionId]);
