@@ -1,7 +1,7 @@
 const express = require('express');
 const db = require('../db/schema');
 const { requireAuth, requireRole } = require('../middleware/auth');
-const { recordStatusChange } = require('../db/helpers');
+const { recordStatusChange, setSections } = require('../db/helpers');
 
 const router = express.Router();
 
@@ -16,11 +16,6 @@ function enrichPurchases(rows) {
   });
 }
 
-function setSections(id, sectionIds) {
-  db.prepare('DELETE FROM purchase_sections WHERE purchase_id = ?').run(id);
-  const insert = db.prepare('INSERT INTO purchase_sections (purchase_id, section_id) VALUES (?, ?)');
-  sectionIds.forEach(sid => insert.run(id, sid));
-}
 
 router.get('/', requireAuth, requireRole('super_admin', 'it_head', 'purchase_admin', 'section_head'), (req, res) => {
   const showArchived = req.query.archived === '1' ? 1 : 0;
@@ -50,7 +45,7 @@ router.post('/', requireAuth, requireRole('super_admin', 'purchase_admin'), (req
   );
   const id = result.lastInsertRowid;
   recordStatusChange('purchase', id, null, initialStatus, req.user.id);
-  if (Array.isArray(section_ids)) setSections(id, section_ids);
+  if (Array.isArray(section_ids)) setSections('purchase_sections', 'purchase_id', id, section_ids);
   const row = db.prepare('SELECT * FROM purchases WHERE id = ?').get(id);
   res.status(201).json(enrichPurchases([row])[0]);
 });

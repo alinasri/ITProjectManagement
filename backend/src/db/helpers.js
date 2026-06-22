@@ -28,4 +28,16 @@ function recordFieldChange(entityType, entityId, field, fromValue, toValue, user
   }
 }
 
-module.exports = { recordStatusChange, recordFieldChange };
+function setResponsibles(table, fk, id, personnelIds) {
+  db.prepare(`DELETE FROM ${table} WHERE ${fk} = ?`).run(id);
+  const insert = db.prepare(`INSERT INTO ${table} (${fk}, personnel_id) VALUES (?, ?)`);
+  personnelIds.forEach(pid => insert.run(id, pid));
+}
+
+function setSections(table, fkCol, id, sectionIds) {
+  db.prepare(`DELETE FROM ${table} WHERE ${fkCol} = ?`).run(id);
+  const insert = db.prepare(`INSERT INTO ${table} (${fkCol}, section_id) VALUES (?, ?)`);
+  sectionIds.forEach(sid => insert.run(id, sid));
+}
+
+module.exports = { recordStatusChange, recordFieldChange, setResponsibles, setSections };

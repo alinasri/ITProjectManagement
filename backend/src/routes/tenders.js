@@ -1,7 +1,7 @@
 const express = require('express');
 const db = require('../db/schema');
 const { requireAuth, requireRole } = require('../middleware/auth');
-const { recordStatusChange } = require('../db/helpers');
+const { recordStatusChange, setSections } = require('../db/helpers');
 
 const router = express.Router();
 
@@ -16,11 +16,6 @@ function enrichTenders(rows) {
   });
 }
 
-function setSections(id, sectionIds) {
-  db.prepare('DELETE FROM tender_sections WHERE tender_id = ?').run(id);
-  const insert = db.prepare('INSERT INTO tender_sections (tender_id, section_id) VALUES (?, ?)');
-  sectionIds.forEach(sid => insert.run(id, sid));
-}
 
 router.get('/', requireAuth, requireRole('super_admin', 'it_head', 'tender_admin', 'section_head'), (req, res) => {
   const showArchived = req.query.archived === '1' ? 1 : 0;
@@ -50,7 +45,7 @@ router.post('/', requireAuth, requireRole('super_admin', 'tender_admin'), (req, 
   );
   const id = result.lastInsertRowid;
   recordStatusChange('tender', id, null, initialStatus, req.user.id);
-  if (Array.isArray(section_ids)) setSections(id, section_ids);
+  if (Array.isArray(section_ids)) setSections('tender_sections', 'tender_id', id, section_ids);
   const row = db.prepare('SELECT * FROM tenders WHERE id = ?').get(id);
   res.status(201).json(enrichTenders([row])[0]);
 });

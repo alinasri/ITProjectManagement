@@ -1,7 +1,7 @@
 const express = require('express');
 const db = require('../db/schema');
 const { requireAuth, requireRole } = require('../middleware/auth');
-const { recordStatusChange } = require('../db/helpers');
+const { recordStatusChange, setSections } = require('../db/helpers');
 
 const router = express.Router();
 
@@ -16,11 +16,6 @@ function enrichContracts(rows) {
   });
 }
 
-function setSections(id, sectionIds) {
-  db.prepare('DELETE FROM contract_sections WHERE contract_id = ?').run(id);
-  const insert = db.prepare('INSERT INTO contract_sections (contract_id, section_id) VALUES (?, ?)');
-  sectionIds.forEach(sid => insert.run(id, sid));
-}
 
 router.get('/', requireAuth, requireRole('super_admin', 'it_head', 'contract_admin', 'section_head'), (req, res) => {
   const showArchived = req.query.archived === '1' ? 1 : 0;
@@ -50,7 +45,7 @@ router.post('/', requireAuth, requireRole('super_admin', 'contract_admin'), (req
   );
   const id = result.lastInsertRowid;
   recordStatusChange('contract', id, null, initialStatus, req.user.id);
-  if (Array.isArray(section_ids)) setSections(id, section_ids);
+  if (Array.isArray(section_ids)) setSections('contract_sections', 'contract_id', id, section_ids);
   const row = db.prepare('SELECT * FROM contracts WHERE id = ?').get(id);
   res.status(201).json(enrichContracts([row])[0]);
 });

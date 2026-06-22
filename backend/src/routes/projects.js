@@ -1,7 +1,7 @@
 const express = require('express');
 const db = require('../db/schema');
 const { requireAuth, requireRole } = require('../middleware/auth');
-const { recordStatusChange, recordFieldChange } = require('../db/helpers');
+const { recordStatusChange, recordFieldChange, setResponsibles } = require('../db/helpers');
 
 const router = express.Router();
 
@@ -19,11 +19,6 @@ function enrichProjects(projects) {
   });
 }
 
-function setResponsibles(table, fk, id, personnelIds) {
-  db.prepare(`DELETE FROM ${table} WHERE ${fk} = ?`).run(id);
-  const insert = db.prepare(`INSERT INTO ${table} (${fk}, personnel_id) VALUES (?, ?)`);
-  personnelIds.forEach(pid => insert.run(id, pid));
-}
 
 router.get('/', requireAuth, (req, res) => {
   const { section_id } = req.query;
