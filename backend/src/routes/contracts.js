@@ -1,3 +1,7 @@
+// routes/contracts.js — Full CRUD for contracts.
+// Same multi-section pattern as purchases.js and tenders.js.
+// Mounted at /api/contracts in app.js.
+
 const express = require('express');
 const db = require('../db/schema');
 const { requireAuth, requireRole } = require('../middleware/auth');
@@ -5,6 +9,8 @@ const { recordStatusChange, setSections } = require('../db/helpers');
 
 const router = express.Router();
 
+// enrichContracts — attaches the sections array to each raw contract row.
+// JOINs through contract_sections to get the full section objects for each contract.
 function enrichContracts(rows) {
   return rows.map(r => {
     const sections = db.prepare(
@@ -17,11 +23,14 @@ function enrichContracts(rows) {
 }
 
 
+// GET /api/contracts — lists contracts with role-based section filtering.
+// contract_admin and it_head can see all; section_head sees only their section's contracts.
 router.get('/', requireAuth, requireRole('super_admin', 'it_head', 'contract_admin', 'section_head'), (req, res) => {
   const showArchived = req.query.archived === '1' ? 1 : 0;
   const filterSection = req.user.role === 'section_head' ? req.user.section_id : req.query.section_id;
   let rows;
   if (filterSection) {
+    // JOIN is required because the section link lives in the contract_sections join table.
     rows = db.prepare(
       `SELECT DISTINCT c.* FROM contracts c
        JOIN contract_sections cs ON cs.contract_id = c.id
@@ -33,6 +42,7 @@ router.get('/', requireAuth, requireRole('super_admin', 'it_head', 'contract_adm
   res.json(enrichContracts(rows));
 });
 
+// POST /api/contracts — creates a new contract. super_admin or contract_admin only.
 router.post('/', requireAuth, requireRole('super_admin', 'contract_admin'), (req, res) => {
   const { title, status, counterparty, start_date, end_date, amount, description, section_ids } = req.body;
   if (!title?.trim()) return res.status(400).json({ error: 'Title required' });
@@ -51,6 +61,7 @@ router.post('/', requireAuth, requireRole('super_admin', 'contract_admin'), (req
   res.status(201).json(enrichContracts([row])[0]);
 });
 
+// GET /api/contracts/:id/history — returns the status change log for one contract.
 router.get('/:id/history', requireAuth, requireRole('super_admin', 'it_head', 'contract_admin'), (req, res) => {
   const rows = db.prepare(
     `SELECT sh.*, u.username as changed_by_username
@@ -62,6 +73,7 @@ router.get('/:id/history', requireAuth, requireRole('super_admin', 'it_head', 'c
   res.json(rows);
 });
 
+// PUT /api/contracts/:id — full update of a contract.
 router.put('/:id', requireAuth, requireRole('super_admin', 'contract_admin'), (req, res) => {
   const row = db.prepare('SELECT * FROM contracts WHERE id = ?').get(req.params.id);
   if (!row) return res.status(404).json({ error: 'Not found' });
@@ -82,11 +94,12 @@ router.put('/:id', requireAuth, requireRole('super_admin', 'contract_admin'), (r
   );
   recordStatusChange('contract', req.params.id, row.status, newStatus, req.user.id);
 
-  if (Array.isArray(section_ids)) setSections(req.params.id, section_ids);
+  if (Array.isArray(section_ids)) setSections('contract_sections', 'contract_id', req.params.id, section_ids);
 
   res.json(enrichContracts([db.prepare('SELECT * FROM contracts WHERE id = ?').get(req.params.id)])[0]);
 });
 
+// PATCH /api/contracts/:id/archive — archives or unarchives a contract.
 router.patch('/:id/archive', requireAuth, requireRole('super_admin', 'contract_admin'), (req, res) => {
   const row = db.prepare('SELECT * FROM contracts WHERE id = ?').get(req.params.id);
   if (!row) return res.status(404).json({ error: 'Not found' });
@@ -95,6 +108,7 @@ router.patch('/:id/archive', requireAuth, requireRole('super_admin', 'contract_a
   res.json({ ok: true, is_archived: archive });
 });
 
+// DELETE /api/contracts/:id — soft-deletes a contract within the 10-minute window.
 router.delete('/:id', requireAuth, requireRole('super_admin', 'contract_admin'), (req, res) => {
   const row = db.prepare('SELECT * FROM contracts WHERE id = ?').get(req.params.id);
   if (!row) return res.status(404).json({ error: 'Not found' });

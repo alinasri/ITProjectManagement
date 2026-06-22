@@ -1,14 +1,25 @@
+// section-isolation.test.js — Verifies that section_head users are strictly confined
+// to their own section's data and cannot read, edit, or delete another section's records.
+//
+// SETUP PATTERN: beforeAll creates TWO section_heads in TWO different sections,
+// then creates one project and one task in each section via the API. Tests then
+// cross-pollinate the tokens (head A tries to act on section B's data) to confirm
+// the server returns 403 Forbidden.
+
 const request = require('supertest');
 const { setupTestApp, seedUser, makeToken } = require('./helpers');
 
 let app, db, jwt, JWT_SECRET;
 
 // Two section_heads in different sections, plus their sections' projects and tasks.
-// IDs are captured here so tests can reference specific records.
+// IDs are captured at setup time so tests can reference specific records by ID.
 let tokenA, tokenB;
 let projectInA, projectInB;
 let taskInA, taskInB;
 
+// beforeAll is async here because we call the API to create projects and tasks.
+// `await` pauses execution until each request finishes so the IDs are ready
+// before any test runs.
 beforeAll(async () => {
   ({ app, db, jwt, JWT_SECRET } = setupTestApp());
 
@@ -19,7 +30,8 @@ beforeAll(async () => {
   tokenA = makeToken(jwt, JWT_SECRET, { id: idA, username: 'head_a', role: 'section_head', section_id: 1 });
   tokenB = makeToken(jwt, JWT_SECRET, { id: idB, username: 'head_b', role: 'section_head', section_id: 2 });
 
-  // Create one project in each section via the API so the records exist for later tests.
+  // Create records via the API (not direct DB inserts) so section_id is enforced
+  // by the route logic, matching the conditions tests will actually exercise.
   const pA = await request(app)
     .post('/api/projects')
     .set('Authorization', `Bearer ${tokenA}`)
@@ -32,7 +44,6 @@ beforeAll(async () => {
     .send({ title: 'Project in Section B' });
   projectInB = pB.body.id;
 
-  // Create one ongoing task in each section.
   const tA = await request(app)
     .post('/api/ongoing-tasks')
     .set('Authorization', `Bearer ${tokenA}`)
@@ -46,8 +57,9 @@ beforeAll(async () => {
   taskInB = tB.body.id;
 });
 
-// --- Project visibility ---
+// ─── Project visibility ────────────────────────────────────────────────────────
 // A section_head's GET /api/projects response must only contain their own section's records.
+// The route filters by req.user.section_id when the role is section_head.
 
 describe('Projects – section_head visibility', () => {
   test('section_head A only sees projects from section 1', async () => {
@@ -56,9 +68,10 @@ describe('Projects – section_head visibility', () => {
       .set('Authorization', `Bearer ${tokenA}`);
 
     expect(res.status).toBe(200);
+    // Extract just the IDs from the response array to check membership.
     const ids = res.body.map(p => p.id);
-    expect(ids).toContain(projectInA);
-    expect(ids).not.toContain(projectInB);
+    expect(ids).toContain(projectInA);       // their own project must appear
+    expect(ids).not.toContain(projectInB);   // the other section's project must NOT appear
   });
 
   test('section_head B only sees projects from section 2', async () => {
@@ -73,8 +86,10 @@ describe('Projects – section_head visibility', () => {
   });
 });
 
-// --- Project edit ---
-// A section_head may update a project in their own section but not another section's.
+// ─── Project edit ──────────────────────────────────────────────────────────────
+// A section_head may update a project in their own section but must be rejected (403)
+// when trying to update a project belonging to another section.
+// The route checks: req.user.section_id !== project.section_id → 403.
 
 describe('Projects – section_head edit', () => {
   test('section_head A can update their own project', async () => {
@@ -89,15 +104,15 @@ describe('Projects – section_head edit', () => {
   test('section_head A cannot update section B project', async () => {
     const res = await request(app)
       .put(`/api/projects/${projectInB}`)
-      .set('Authorization', `Bearer ${tokenA}`)
+      .set('Authorization', `Bearer ${tokenA}`)  // tokenA, but projectInB belongs to section 2
       .send({ title: 'Should be denied' });
 
     expect(res.status).toBe(403);
   });
 });
 
-// --- Project delete ---
-// A section_head may soft-delete a project in their own section but not another section's.
+// ─── Project delete ────────────────────────────────────────────────────────────
+// Mirrors the edit tests but for the DELETE endpoint.
 
 describe('Projects – section_head delete', () => {
   test('section_head A cannot delete section B project', async () => {
@@ -109,7 +124,9 @@ describe('Projects – section_head delete', () => {
   });
 
   test('section_head A can delete their own project', async () => {
-    // Create a fresh project so this delete doesn't affect other tests.
+    // Create a fresh project just for this test — deleting projectInA would
+    // break the visibility test above if tests ran in a different order.
+    // Test isolation: each test that destroys data should create its own record.
     const created = await request(app)
       .post('/api/projects')
       .set('Authorization', `Bearer ${tokenA}`)
@@ -123,8 +140,9 @@ describe('Projects – section_head delete', () => {
   });
 });
 
-// --- Ongoing task archive ---
+// ─── Ongoing task archive ──────────────────────────────────────────────────────
 // A section_head may archive tasks in their own section but not another section's.
+// PATCH /:id/archive checks section ownership the same way PUT does.
 
 describe('Ongoing tasks – section_head archive', () => {
   test('section_head A can archive their own task', async () => {
@@ -139,15 +157,14 @@ describe('Ongoing tasks – section_head archive', () => {
   test('section_head A cannot archive section B task', async () => {
     const res = await request(app)
       .patch(`/api/ongoing-tasks/${taskInB}/archive`)
-      .set('Authorization', `Bearer ${tokenA}`)
+      .set('Authorization', `Bearer ${tokenA}`)  // tokenA, but taskInB belongs to section 2
       .send({ archive: true });
 
     expect(res.status).toBe(403);
   });
 });
 
-// --- Ongoing task edit ---
-// A section_head may update tasks in their own section but not another section's.
+// ─── Ongoing task edit ─────────────────────────────────────────────────────────
 
 describe('Ongoing tasks – section_head edit', () => {
   test('section_head A can update their own task', async () => {

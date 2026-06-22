@@ -1,12 +1,20 @@
+// roles.test.js — Verifies that every role can only access the endpoints it is permitted to.
+//
+// STRATEGY: one user per role is created in beforeAll. Tests then make requests
+// as each role and assert the correct HTTP status (200/201 for allowed, 403 for denied).
+// This is a "permission matrix" test — it documents and enforces who can do what.
+
 const request = require('supertest');
 const { setupTestApp, seedUser, makeToken } = require('./helpers');
 
 let app, db, jwt, JWT_SECRET;
 
-// One JWT token per role, keyed by role name. Built once in beforeAll and
-// reused across all tests so we don't repeat setup inside each test.
+// One JWT token per role, stored in a plain object keyed by role string.
+// Created once in beforeAll and reused across all tests — no repeated setup per test.
 const tokens = {};
 
+// beforeAll — runs once before any test in this file.
+// Seeds one user per role and signs a JWT for each so tests can authenticate.
 beforeAll(() => {
   ({ app, db, jwt, JWT_SECRET } = setupTestApp());
 
@@ -22,19 +30,26 @@ beforeAll(() => {
 
   for (const u of users) {
     const id = seedUser(db, { username: u.username, role: u.role, section_id: u.section_id });
+    // Store the token under the role name so tests can do tokens['it_head'], etc.
     tokens[u.role] = makeToken(jwt, JWT_SECRET, { id, username: u.username, role: u.role, section_id: u.section_id });
   }
 });
 
-// Convenience wrapper so tests don't repeat the Authorization header every time.
+// authed — convenience wrapper that attaches the Authorization header for a given role.
+// Without this helper, every test would repeat .set('Authorization', `Bearer ${tokens[role]}`).
+// Returns a Supertest request object so callers can chain .send(), .expect(), etc.
 function authed(method, url, role) {
   return request(app)[method](url).set('Authorization', `Bearer ${tokens[role]}`);
 }
 
-// --- Projects ---
+// ─── Projects ─────────────────────────────────────────────────────────────────
+//
+// describe(name, fn) — groups related tests under a shared label.
+// Jest displays the group name in the test output, making results easier to read.
+// Grouping also lets you run just this group with `jest -t "Projects – create"`.
+
 // Only super_admin and section_head may create projects.
 // All other roles (including it_head) are blocked with 403.
-
 describe('Projects – create', () => {
   test('super_admin can create a project', async () => {
     const res = await authed('post', '/api/projects', 'super_admin')
@@ -43,11 +58,13 @@ describe('Projects – create', () => {
   });
 
   test('section_head can create a project in their own section', async () => {
+    // section_id is not sent — the route reads it from the token (req.user.section_id).
     const res = await authed('post', '/api/projects', 'section_head')
-      .send({ title: 'Section Project' }); // section_id comes from the token
+      .send({ title: 'Section Project' });
     expect(res.status).toBe(201);
   });
 
+  // The following four tests verify that requireRole correctly blocks non-permitted roles.
   test('it_head cannot create a project', async () => {
     const res = await authed('post', '/api/projects', 'it_head')
       .send({ title: 'Denied', section_id: 1 });
@@ -73,9 +90,11 @@ describe('Projects – create', () => {
   });
 });
 
-// --- Purchases ---
-// READ: super_admin, it_head, purchase_admin, section_head allowed. tender_admin and contract_admin are not.
-// WRITE: super_admin and purchase_admin only.
+// ─── Purchases ────────────────────────────────────────────────────────────────
+//
+// READ access: super_admin, it_head, purchase_admin, section_head.
+// tender_admin and contract_admin have no access at all (403 on GET too).
+// WRITE access: super_admin and purchase_admin only.
 
 describe('Purchases – read', () => {
   test('purchase_admin can list purchases', async () => {
@@ -93,6 +112,7 @@ describe('Purchases – read', () => {
     expect(res.status).toBe(200);
   });
 
+  // tender_admin and contract_admin are not in the allowed role list for GET /purchases.
   test('tender_admin cannot list purchases', async () => {
     const res = await authed('get', '/api/purchases', 'tender_admin');
     expect(res.status).toBe(403);
@@ -111,6 +131,7 @@ describe('Purchases – create', () => {
     expect(res.status).toBe(201);
   });
 
+  // it_head can read but not create — read-only role for this domain.
   test('it_head cannot create a purchase', async () => {
     const res = await authed('post', '/api/purchases', 'it_head')
       .send({ title: 'Denied' });
@@ -130,8 +151,10 @@ describe('Purchases – create', () => {
   });
 });
 
-// --- Tenders ---
-// READ: super_admin, it_head, tender_admin, section_head. purchase_admin and contract_admin are not.
+// ─── Tenders ──────────────────────────────────────────────────────────────────
+//
+// READ: super_admin, it_head, tender_admin, section_head.
+// purchase_admin and contract_admin are completely excluded.
 // WRITE: super_admin and tender_admin only.
 
 describe('Tenders – read', () => {
@@ -171,8 +194,10 @@ describe('Tenders – create', () => {
   });
 });
 
-// --- Contracts ---
-// READ: super_admin, it_head, contract_admin, section_head. purchase_admin and tender_admin are not.
+// ─── Contracts ────────────────────────────────────────────────────────────────
+//
+// READ: super_admin, it_head, contract_admin, section_head.
+// purchase_admin and tender_admin are completely excluded.
 // WRITE: super_admin and contract_admin only.
 
 describe('Contracts – read', () => {
@@ -212,7 +237,7 @@ describe('Contracts – create', () => {
   });
 });
 
-// --- Sections ---
+// ─── Sections ─────────────────────────────────────────────────────────────────
 // Only super_admin may create, update, or delete sections.
 
 describe('Sections – manage', () => {
@@ -235,8 +260,8 @@ describe('Sections – manage', () => {
   });
 });
 
-// --- Users ---
-// Only super_admin can list or create users. All other roles are blocked.
+// ─── Users ────────────────────────────────────────────────────────────────────
+// Only super_admin can list or create user accounts.
 
 describe('Users – manage', () => {
   test('super_admin can list users', async () => {
