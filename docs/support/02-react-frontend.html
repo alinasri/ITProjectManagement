@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>02 — React Frontend</title>
+<link rel="stylesheet" href="../assets/style.css" />
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/atom-one-dark.min.css" />
+</head>
+<body>
+<main>
+  <p class="home-link"><a href="../index.html">&larr; Back to index</a></p>
+  <h1>02. React Frontend</h1>
+  <p class="lead">What a component is, how this app is broken into pieces, and how the browser decides which screen to show.</p>
+
+  <h2>What is a component?</h2>
+  <p>A React component is just a JavaScript function that returns a description of some UI (written in a syntax called <strong>JSX</strong>, which looks like HTML mixed into JavaScript). React calls that function, gets back the description, and turns it into real DOM elements on the page. When the component's data changes, React calls the function again and updates only what changed.</p>
+  <pre><code class="language-jsx">function StatCard({ label, value }) {
+  return (
+    &lt;div className="rounded-lg p-4 bg-gray-900"&gt;
+      &lt;p&gt;{label}&lt;/p&gt;
+      &lt;p&gt;{value}&lt;/p&gt;
+    &lt;/div&gt;
+  );
+}</code></pre>
+  <p><code>label</code> and <code>value</code> here are <strong>props</strong> — values passed into a component from whoever uses it, the same way arguments are passed into a function.</p>
+
+  <h2>In this app — pages vs. components</h2>
+  <p>This codebase draws a clear line between two kinds of components, both under <code>frontend/src/</code>:</p>
+  <table>
+    <tr><th>Folder</th><th>Purpose</th><th>Examples</th></tr>
+    <tr><td><code>pages/</code></td><td>Full screens — one per route, each fetches its own data</td><td><code>LoginPage.jsx</code>, <code>AdminDashboard.jsx</code>, <code>PurchasesPage.jsx</code>, <code>TendersPage.jsx</code>, <code>ContractsPage.jsx</code>, <code>SectionDashboard.jsx</code></td></tr>
+    <tr><td><code>components/</code></td><td>Small reusable building blocks used across multiple pages</td><td><code>Layout.jsx</code>, <code>Sidebar.jsx</code>, <code>Modal.jsx</code>, <code>StatusBadge.jsx</code>, <code>StatCard.jsx</code>, <code>FilterBar.jsx</code></td></tr>
+  </table>
+  <p>A page like <code>PurchasesPage.jsx</code> is built by combining smaller components — it might render a <code>PageHeader</code>, a <code>FilterBar</code>, a list of rows each with a <code>StatusBadge</code>, and a <code>ConfirmDialog</code> for deletes. None of those pieces know about purchases specifically — they're generic and reused everywhere.</p>
+
+  <h2>What is routing, and what is React Router?</h2>
+  <p>A normal website has multiple actual HTML pages — clicking a link loads a new file from the server. A <strong>single-page app (SPA)</strong> like this one loads one HTML file, and a library called <strong>React Router</strong> watches the URL in the address bar and decides which component to show, entirely inside the browser, without a full page reload.</p>
+
+  <h3>In this app — the route table</h3>
+  <p class="filepath">frontend/src/App.jsx</p>
+  <p>Every URL the app responds to is declared in one place:</p>
+  <table>
+    <tr><th>Path</th><th>Component shown</th><th>Who can see it</th></tr>
+    <tr><td><code>/login</code></td><td>LoginPage</td><td>Anyone (redirects away if already logged in)</td></tr>
+    <tr><td><code>/report/:token</code></td><td>PublicReport</td><td>Anyone with the link — no login required</td></tr>
+    <tr><td><code>/change-password</code></td><td>ChangePasswordPage</td><td>Any logged-in user</td></tr>
+    <tr><td><code>/admin/*</code></td><td>AdminDashboard</td><td><code>super_admin</code> only</td></tr>
+    <tr><td><code>/it-head/*</code></td><td>ITHeadDashboard</td><td><code>it_head</code>, <code>super_admin</code></td></tr>
+    <tr><td><code>/section/:sectionId/*</code></td><td>SectionDashboard</td><td><code>section_head</code>, <code>it_head</code>, <code>super_admin</code></td></tr>
+    <tr><td><code>/purchases</code></td><td>PurchasesPage</td><td><code>purchase_admin</code>, <code>it_head</code>, <code>super_admin</code></td></tr>
+    <tr><td><code>/tenders</code></td><td>TendersPage</td><td><code>tender_admin</code>, <code>it_head</code>, <code>super_admin</code></td></tr>
+    <tr><td><code>/contracts</code></td><td>ContractsPage</td><td><code>contract_admin</code>, <code>it_head</code>, <code>super_admin</code></td></tr>
+  </table>
+  <p>The <code>:sectionId</code> and <code>:token</code> bits are <strong>route params</strong> — placeholders that capture part of the URL so the component can read which section or report token was requested.</p>
+
+  <h3>How a route gets "locked"</h3>
+  <p>Look at this real snippet from <code>App.jsx</code>:</p>
+  <pre><code class="language-jsx">function RequireAuth({ roles }) {
+  const { user, loading } = useAuth();
+  if (loading) return null;
+  if (!user) return &lt;Navigate to="/login" replace /&gt;;
+  if (roles &amp;&amp; !roles.includes(user.role)) return &lt;Navigate to="/" replace /&gt;;
+  return &lt;Outlet /&gt;;
+}</code></pre>
+  <p><code>RequireAuth</code> is a "gatekeeper" component. It's placed as a wrapper around protected routes; before rendering the real page, it checks whether someone is logged in (<code>user</code>) and whether their role is in the allowed list. If not, it redirects instead of rendering. <code>&lt;Outlet /&gt;</code> is React Router's way of saying "render whichever nested route matched."</p>
+
+  <div class="callout">
+    <strong>Key idea:</strong> Routing is just "look at the URL, pick a component." Access control is layered on top by wrapping routes in components like <code>RequireAuth</code> that decide to redirect instead of render.
+  </div>
+
+  <section class="quiz">
+    <h2>Self-check</h2>
+    <details>
+      <summary>What's the practical difference between something living in <code>pages/</code> vs. <code>components/</code>?</summary>
+      <p>A page is tied to a specific URL/route and typically fetches its own data from the API. A component has no route of its own — it's a reusable visual building block that pages assemble together (and it usually receives data via props rather than fetching it itself).</p>
+    </details>
+    <details>
+      <summary>If a <code>section_head</code> user types <code>/admin</code> into the address bar, what happens?</summary>
+      <p><code>RequireAuth</code> wraps that route with <code>roles={['super_admin']}</code>. Since <code>section_head</code> isn't in that list, the check <code>!roles.includes(user.role)</code> is true, and the user is redirected to <code>/</code> instead of seeing the admin dashboard.</p>
+    </details>
+    <details>
+      <summary>What does <code>:sectionId</code> in the path <code>/section/:sectionId/*</code> mean?</summary>
+      <p>It's a dynamic URL segment. Visiting <code>/section/3/projects</code> matches this route and makes <code>3</code> available inside <code>SectionDashboard</code> via React Router's <code>useParams()</code> hook, so the component knows which section's data to load.</p>
+    </details>
+    <details>
+      <summary>Try it: open <code>frontend/src/pages/PurchasesPage.jsx</code> and find one component from <code>components/</code> that it imports and renders.</summary>
+      <p>Look at the top import list and the JSX returned — you should find things like <code>PageHeader</code>, <code>StatusBadge</code>, <code>ConfirmDialog</code>, or <code>FilterBar</code> being used to assemble the page.</p>
+    </details>
+  </section>
+
+  <div class="nav-strip">
+    <a href="01-architecture.html">&larr; Architecture</a>
+    <a href="03-state-and-api.html">Next: State &amp; API &rarr;</a>
+  </div>
+</main>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+<script>hljs.highlightAll();</script>
+</body>
+</html>
