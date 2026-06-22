@@ -11,6 +11,10 @@ const db = new DatabaseSync(path.join(DATA_DIR, 'it_pm.db'));
 db.exec("PRAGMA journal_mode = WAL");
 db.exec("PRAGMA foreign_keys = ON");
 
+// ── Base schema ───────────────────────────────────────────────────────────────
+// Defines the complete current schema for brand-new databases.
+// Existing databases are upgraded to this state via migrations below.
+
 db.exec(`
   CREATE TABLE IF NOT EXISTS sections (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -23,9 +27,11 @@ db.exec(`
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     username TEXT UNIQUE NOT NULL,
     password_hash TEXT NOT NULL,
-    role TEXT NOT NULL CHECK(role IN ('super_admin','it_head','section_head')),
+    role TEXT NOT NULL CHECK(role IN ('super_admin','it_head','section_head','purchase_admin','tender_admin','contract_admin')),
     section_id INTEGER REFERENCES sections(id) ON DELETE SET NULL,
     must_change_password INTEGER DEFAULT 0,
+    is_active INTEGER NOT NULL DEFAULT 1,
+    is_deleted INTEGER NOT NULL DEFAULT 0,
     created_at TEXT DEFAULT (datetime('now'))
   );
 
@@ -40,12 +46,15 @@ db.exec(`
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     title TEXT NOT NULL,
     section_id INTEGER NOT NULL REFERENCES sections(id) ON DELETE CASCADE,
-    responsible_id INTEGER REFERENCES personnel(id) ON DELETE SET NULL,
     status TEXT NOT NULL DEFAULT 'not_started'
       CHECK(status IN ('not_started','in_progress','on_hold','completed')),
     future_plan TEXT DEFAULT '',
     problems TEXT DEFAULT '',
     row_order INTEGER DEFAULT 0,
+    progress INTEGER NOT NULL DEFAULT 0,
+    due_date TEXT,
+    is_archived INTEGER NOT NULL DEFAULT 0,
+    is_deleted INTEGER NOT NULL DEFAULT 0,
     created_at TEXT DEFAULT (datetime('now')),
     updated_at TEXT DEFAULT (datetime('now'))
   );
@@ -69,10 +78,12 @@ db.exec(`
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     title TEXT NOT NULL,
     section_id INTEGER NOT NULL REFERENCES sections(id) ON DELETE CASCADE,
-    responsible_id INTEGER REFERENCES personnel(id) ON DELETE SET NULL,
     status TEXT NOT NULL DEFAULT 'in_progress'
       CHECK(status IN ('pending','in_progress','on_hold','completed')),
     note TEXT DEFAULT '',
+    progress INTEGER NOT NULL DEFAULT 0,
+    is_archived INTEGER NOT NULL DEFAULT 0,
+    is_deleted INTEGER NOT NULL DEFAULT 0,
     created_at TEXT DEFAULT (datetime('now')),
     updated_at TEXT DEFAULT (datetime('now'))
   );
@@ -98,6 +109,8 @@ db.exec(`
     amount TEXT DEFAULT '',
     purchase_date TEXT DEFAULT '',
     description TEXT DEFAULT '',
+    is_archived INTEGER NOT NULL DEFAULT 0,
+    is_deleted INTEGER NOT NULL DEFAULT 0,
     created_at TEXT DEFAULT (datetime('now')),
     updated_at TEXT DEFAULT (datetime('now'))
   );
@@ -117,6 +130,8 @@ db.exec(`
     deadline TEXT DEFAULT '',
     winner TEXT DEFAULT '',
     description TEXT DEFAULT '',
+    is_archived INTEGER NOT NULL DEFAULT 0,
+    is_deleted INTEGER NOT NULL DEFAULT 0,
     created_at TEXT DEFAULT (datetime('now')),
     updated_at TEXT DEFAULT (datetime('now'))
   );
@@ -137,6 +152,8 @@ db.exec(`
     end_date TEXT DEFAULT '',
     amount TEXT DEFAULT '',
     description TEXT DEFAULT '',
+    is_archived INTEGER NOT NULL DEFAULT 0,
+    is_deleted INTEGER NOT NULL DEFAULT 0,
     created_at TEXT DEFAULT (datetime('now')),
     updated_at TEXT DEFAULT (datetime('now'))
   );
@@ -146,32 +163,92 @@ db.exec(`
     section_id INTEGER NOT NULL REFERENCES sections(id) ON DELETE CASCADE,
     PRIMARY KEY (contract_id, section_id)
   );
+
+  CREATE TABLE IF NOT EXISTS status_history (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    entity_type TEXT NOT NULL CHECK(entity_type IN ('project','ongoing_task','purchase','tender','contract')),
+    entity_id   INTEGER NOT NULL,
+    field       TEXT,
+    from_status TEXT,
+    to_status   TEXT NOT NULL,
+    changed_by  INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    changed_at  TEXT DEFAULT (datetime('now'))
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_status_history_entity ON status_history(entity_type, entity_id);
+
+  CREATE TABLE IF NOT EXISTS report_tokens (
+    id      INTEGER PRIMARY KEY DEFAULT 1,
+    token   TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
 `);
 
-// Migrate single responsible_id columns to many-to-many join tables
-// (projects/ongoing_tasks can each have more than one مسئول)
-for (const [table, joinTable, fk] of [
-  ['projects', 'project_responsibles', 'project_id'],
-  ['ongoing_tasks', 'ongoing_task_responsibles', 'task_id'],
-]) {
-  const hasResponsibleId = db.prepare(`PRAGMA table_info(${table})`).all().some(c => c.name === 'responsible_id');
-  if (hasResponsibleId) {
-    db.exec(`INSERT OR IGNORE INTO ${joinTable} (${fk}, personnel_id)
-             SELECT id, responsible_id FROM ${table} WHERE responsible_id IS NOT NULL`);
-    db.exec(`ALTER TABLE ${table} DROP COLUMN responsible_id`);
-  }
+// ── Migration runner ──────────────────────────────────────────────────────────
+
+db.exec(`
+  CREATE TABLE IF NOT EXISTS _migrations (
+    id     TEXT PRIMARY KEY,
+    ran_at TEXT NOT NULL DEFAULT (datetime('now'))
+  )
+`);
+
+function hasRun(id) {
+  return !!db.prepare('SELECT 1 FROM _migrations WHERE id = ?').get(id);
 }
 
-// Add status column to ongoing_tasks for existing databases
-try {
+function stamp(id) {
+  db.prepare('INSERT OR IGNORE INTO _migrations (id) VALUES (?)').run(id);
+}
+
+function runMigration(id, fn) {
+  if (hasRun(id)) return;
+  fn();
+  stamp(id);
+}
+
+// Both existing databases (upgraded via old try/catch blocks) and brand-new
+// databases (created from the base schema above) already have due_date in
+// projects. Stamp all historical migrations so they don't re-run.
+const projectCols = db.prepare('PRAGMA table_info(projects)').all().map(c => c.name);
+if (projectCols.includes('due_date') && db.prepare('SELECT COUNT(*) as c FROM _migrations').get().c === 0) {
+  [
+    '001_migrate_responsibles',
+    '002_add_status_to_ongoing_tasks',
+    '003_add_registry_admin_roles',
+    '004_add_field_to_status_history',
+    '005_add_is_archived',
+    '006_add_is_deleted',
+    '007_add_is_active_to_users',
+    '008_add_progress_columns',
+    '009_add_due_date_to_projects',
+  ].forEach(stamp);
+}
+
+// ── Migrations ────────────────────────────────────────────────────────────────
+// Add new migrations here. Each runs exactly once, fails loudly if something
+// goes wrong, and is recorded in _migrations so it never runs again.
+
+runMigration('001_migrate_responsibles', () => {
+  for (const [table, joinTable, fk] of [
+    ['projects', 'project_responsibles', 'project_id'],
+    ['ongoing_tasks', 'ongoing_task_responsibles', 'task_id'],
+  ]) {
+    const cols = db.prepare(`PRAGMA table_info(${table})`).all().map(c => c.name);
+    if (cols.includes('responsible_id')) {
+      db.exec(`INSERT OR IGNORE INTO ${joinTable} (${fk}, personnel_id)
+               SELECT id, responsible_id FROM ${table} WHERE responsible_id IS NOT NULL`);
+      db.exec(`ALTER TABLE ${table} DROP COLUMN responsible_id`);
+    }
+  }
+});
+
+runMigration('002_add_status_to_ongoing_tasks', () => {
   db.exec(`ALTER TABLE ongoing_tasks ADD COLUMN status TEXT NOT NULL DEFAULT 'in_progress'
     CHECK(status IN ('pending','in_progress','on_hold','completed'))`);
-} catch (_) {}
+});
 
-// Migrate users.role CHECK constraint to allow the new registry-admin roles
-// (SQLite can't ALTER a CHECK constraint in place — recreate the table)
-const usersTableSql = db.prepare(`SELECT sql FROM sqlite_master WHERE type='table' AND name='users'`).get().sql;
-if (!usersTableSql.includes('purchase_admin')) {
+runMigration('003_add_registry_admin_roles', () => {
   db.exec(`
     CREATE TABLE users_new (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -187,66 +264,40 @@ if (!usersTableSql.includes('purchase_admin')) {
     DROP TABLE users;
     ALTER TABLE users_new RENAME TO users;
   `);
-}
+});
 
-// Status history audit trail
-db.exec(`
-  CREATE TABLE IF NOT EXISTS status_history (
-    id          INTEGER PRIMARY KEY AUTOINCREMENT,
-    entity_type TEXT NOT NULL CHECK(entity_type IN ('project','ongoing_task','purchase','tender','contract')),
-    entity_id   INTEGER NOT NULL,
-    from_status TEXT,
-    to_status   TEXT NOT NULL,
-    changed_by  INTEGER REFERENCES users(id) ON DELETE SET NULL,
-    changed_at  TEXT DEFAULT (datetime('now'))
-  )
-`);
-db.exec(`CREATE INDEX IF NOT EXISTS idx_status_history_entity ON status_history(entity_type, entity_id)`);
+runMigration('004_add_field_to_status_history', () => {
+  db.exec(`ALTER TABLE status_history ADD COLUMN field TEXT`);
+});
 
-// Add field column to status_history to support non-status field changes (e.g. due_date)
-try { db.exec(`ALTER TABLE status_history ADD COLUMN field TEXT`); } catch (_) {}
-
-// Add is_archived column to all entity tables
-for (const table of ['projects', 'ongoing_tasks', 'purchases', 'tenders', 'contracts']) {
-  try {
+runMigration('005_add_is_archived', () => {
+  for (const table of ['projects', 'ongoing_tasks', 'purchases', 'tenders', 'contracts']) {
     db.exec(`ALTER TABLE ${table} ADD COLUMN is_archived INTEGER NOT NULL DEFAULT 0`);
-  } catch (_) {}
-}
+  }
+});
 
-// Add is_deleted column to all entity tables (soft delete within 10-minute window)
-for (const table of ['projects', 'ongoing_tasks', 'purchases', 'tenders', 'contracts', 'users']) {
-  try {
+runMigration('006_add_is_deleted', () => {
+  for (const table of ['projects', 'ongoing_tasks', 'purchases', 'tenders', 'contracts', 'users']) {
     db.exec(`ALTER TABLE ${table} ADD COLUMN is_deleted INTEGER NOT NULL DEFAULT 0`);
-  } catch (_) {}
-}
+  }
+});
 
-// Add is_active column to users (disable/enable without deleting)
-try {
+runMigration('007_add_is_active_to_users', () => {
   db.exec('ALTER TABLE users ADD COLUMN is_active INTEGER NOT NULL DEFAULT 1');
-} catch (_) {}
+});
 
-// Add progress column (0-100) to projects and ongoing_tasks
-for (const table of ['projects', 'ongoing_tasks']) {
-  try {
+runMigration('008_add_progress_columns', () => {
+  for (const table of ['projects', 'ongoing_tasks']) {
     db.exec(`ALTER TABLE ${table} ADD COLUMN progress INTEGER NOT NULL DEFAULT 0`);
-  } catch (_) {}
-}
+  }
+});
 
-// Add due_date to projects
-try {
+runMigration('009_add_due_date_to_projects', () => {
   db.exec(`ALTER TABLE projects ADD COLUMN due_date TEXT`);
-} catch (_) {}
+});
 
-// Report token for public shareable CEO report
-try {
-  db.exec(`CREATE TABLE IF NOT EXISTS report_tokens (
-    id      INTEGER PRIMARY KEY DEFAULT 1,
-    token   TEXT NOT NULL,
-    created_at TEXT NOT NULL DEFAULT (datetime('now'))
-  )`);
-} catch (_) {}
+// ── Seed initial data ─────────────────────────────────────────────────────────
 
-// Seed initial data only once
 const existing = db.prepare('SELECT COUNT(*) as c FROM sections').get();
 if (existing.c === 0) {
   const insertSection = db.prepare('INSERT INTO sections (name) VALUES (?)');
