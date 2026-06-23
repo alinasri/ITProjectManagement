@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Lesson 04 — Routing</title>
+<link rel="stylesheet" href="_shared.css">
+</head>
+<body>
+
+<nav>
+  <div class="logo"><a href="index.html">Frontend Learning Hub</a><span>IT Project Management</span></div>
+  <div class="section-label">Foundations</div>
+  <a href="01-architecture.html"><span class="num">01</span> Architecture</a>
+  <a href="02-how-react-works.html"><span class="num">02</span> How React Works</a>
+  <a href="03-entry-point.html"><span class="num">03</span> Entry Point</a>
+  <div class="section-label">Core Concepts</div>
+  <a href="04-routing.html" class="active"><span class="num">04</span> Routing</a>
+  <a href="05-state-and-hooks.html"><span class="num">05</span> State &amp; Hooks</a>
+  <a href="06-context.html"><span class="num">06</span> Context API</a>
+  <div class="section-label">The App's Layers</div>
+  <a href="07-components.html"><span class="num">07</span> Components</a>
+  <a href="08-api-layer.html"><span class="num">08</span> API Layer</a>
+  <a href="09-tailwind.html"><span class="num">09</span> Tailwind CSS</a>
+  <div class="section-label">Putting It Together</div>
+  <a href="10-auth-flow.html"><span class="num">10</span> Auth Flow</a>
+  <a href="11-complete-walkthrough.html"><span class="num">11</span> Walkthrough</a>
+</nav>
+
+<main>
+  <h1>🗺️ Routing</h1>
+  <p class="subtitle">React Router is the library that makes URLs work in a Single Page App. Without it, navigating anywhere would reload the page. This lesson explains every routing concept used in this project.</p>
+
+  <h2>What Problem Does React Router Solve?</h2>
+  <p>A browser normally navigates by sending a new request to the server for each URL. But in a React SPA, we want navigation to feel instant — just swap the content area, no page reload. React Router intercepts link clicks and browser back/forward buttons, preventing the actual navigation, and instead tells React which component to render for the new URL.</p>
+
+  <div class="callout info"><div class="callout-icon"></div><p>React Router works by listening to the browser's <strong>History API</strong>. When you click a NavLink, React Router calls <code>history.pushState()</code> to change the URL in the address bar (without reloading), then tells React to re-render with the new route's component.</p></div>
+
+  <h2>The Building Blocks</h2>
+
+  <h3>BrowserRouter</h3>
+  <p>The outermost router component. It sets up the routing context that everything inside can use. It must wrap all routes and any component that uses routing hooks.</p>
+  <pre><code><span class="cmt">// App.jsx — BrowserRouter wraps the entire app</span>
+<span class="tag">&lt;AuthProvider&gt;</span>
+  <span class="tag">&lt;BrowserRouter&gt;</span>       <span class="cmt">← activates routing for everything inside</span>
+    <span class="tag">&lt;Routes&gt;</span>
+      ...
+    <span class="tag">&lt;/Routes&gt;</span>
+  <span class="tag">&lt;/BrowserRouter&gt;</span>
+<span class="tag">&lt;/AuthProvider&gt;</span></code></pre>
+
+  <h3>Routes and Route</h3>
+  <p><code>&lt;Routes&gt;</code> is a container that looks at the current URL and renders only the first <code>&lt;Route&gt;</code> whose <code>path</code> matches. Think of it as a switch statement for URLs.</p>
+  <pre><code><span class="tag">&lt;Routes&gt;</span>
+  <span class="cmt">// When URL is exactly /login → render LoginPage</span>
+  <span class="tag">&lt;Route</span> <span class="attr">path</span>=<span class="str">"/login"</span> <span class="attr">element</span>=<span class="jsx">{&lt;LoginPage /&gt;}</span> <span class="tag">/&gt;</span>
+
+  <span class="cmt">// When URL starts with /admin → render AdminDashboard</span>
+  <span class="tag">&lt;Route</span> <span class="attr">path</span>=<span class="str">"/admin/*"</span> <span class="attr">element</span>=<span class="jsx">{&lt;AdminDashboard /&gt;}</span> <span class="tag">/&gt;</span>
+
+  <span class="cmt">// Catch-all — any other URL → redirect to /</span>
+  <span class="tag">&lt;Route</span> <span class="attr">path</span>=<span class="str">"*"</span> <span class="attr">element</span>=<span class="jsx">{&lt;Navigate to="/" replace /&gt;}</span> <span class="tag">/&gt;</span>
+<span class="tag">&lt;/Routes&gt;</span></code></pre>
+
+  <p>The <code>path="*"</code> wildcard catches anything that didn't match earlier routes — it's the 404 handler.</p>
+
+  <h3>Navigate — Programmatic Redirect</h3>
+  <p><code>&lt;Navigate&gt;</code> is a component that, when rendered, immediately redirects the browser to a different URL. It's used for redirects in guards:</p>
+  <pre><code><span class="cmt">// If not logged in, show /login instead of this page</span>
+<span class="kw">if</span> (!user) <span class="kw">return</span> <span class="tag">&lt;Navigate</span> <span class="attr">to</span>=<span class="str">"/login"</span> <span class="attr">replace</span> <span class="tag">/&gt;</span>;</code></pre>
+  <p>The <code>replace</code> prop replaces the current history entry instead of adding a new one. This means pressing the browser's Back button won't bring you back to the page you were just blocked from — it goes further back in history.</p>
+
+  <h3>useNavigate — Navigate From Code</h3>
+  <p>When you need to navigate in response to something (like a successful login or a form submit), use the <code>useNavigate</code> hook:</p>
+  <pre><code><span class="cmt">// From LoginPage.jsx</span>
+<span class="kw">const</span> navigate = <span class="fn">useNavigate</span>();
+
+<span class="kw">const</span> handleSubmit = <span class="kw">async</span> (e) => {
+  <span class="kw">const</span> user = <span class="kw">await</span> <span class="fn">login</span>(username, password);
+  <span class="fn">navigate</span>(<span class="str">'/admin'</span>);   <span class="cmt">← go to /admin after successful login</span>
+};</code></pre>
+  <p><code>navigate('/admin')</code> is the imperative equivalent of <code>&lt;Navigate to="/admin" /&gt;</code>. Use <code>navigate</code> in event handlers and async code. Use <code>&lt;Navigate&gt;</code> in render logic.</p>
+
+  <h2>Nested Routes and Outlet</h2>
+  <p>Nested routes are one of the most powerful features of React Router. They let you have a persistent "shell" component (like a sidebar layout) that stays mounted while different page content loads inside it.</p>
+
+  <p>Here is the nested route structure from App.jsx:</p>
+  <pre><code><span class="cmt">// Outer route — renders ProtectedLayout (sidebar + content area)</span>
+<span class="tag">&lt;Route</span> <span class="attr">element</span>=<span class="jsx">{&lt;ProtectedLayout /&gt;}</span><span class="tag">&gt;</span>
+
+  <span class="cmt">// Inner routes — rendered INSIDE ProtectedLayout via Outlet</span>
+  <span class="tag">&lt;Route</span> <span class="attr">element</span>=<span class="jsx">{&lt;RequireAuth roles={['super_admin']} /&gt;}</span><span class="tag">&gt;</span>
+    <span class="tag">&lt;Route</span> <span class="attr">path</span>=<span class="str">"/admin/*"</span> <span class="attr">element</span>=<span class="jsx">{&lt;AdminDashboard /&gt;}</span> <span class="tag">/&gt;</span>
+  <span class="tag">&lt;/Route&gt;</span>
+
+  <span class="tag">&lt;Route</span> <span class="attr">element</span>=<span class="jsx">{&lt;RequireAuth roles={['purchase_admin', 'it_head', 'super_admin']} /&gt;}</span><span class="tag">&gt;</span>
+    <span class="tag">&lt;Route</span> <span class="attr">path</span>=<span class="str">"/purchases"</span> <span class="attr">element</span>=<span class="jsx">{&lt;PurchasesPage /&gt;}</span> <span class="tag">/&gt;</span>
+  <span class="tag">&lt;/Route&gt;</span>
+
+<span class="tag">&lt;/Route&gt;</span></code></pre>
+
+  <p>When the user visits <code>/purchases</code>:</p>
+  <ol>
+    <li>React Router matches the outer route → renders <code>ProtectedLayout</code></li>
+    <li>ProtectedLayout renders <code>Layout</code> (sidebar + a placeholder slot)</li>
+    <li>React Router matches the inner route → puts <code>PurchasesPage</code> in that slot</li>
+  </ol>
+
+  <p>That "slot" is the <code>&lt;Outlet /&gt;</code> component. It's a placeholder that says "render the matched child route here".</p>
+
+  <pre><code><span class="cmt">// components/Layout.jsx</span>
+<span class="kw">export default function</span> <span class="fn">Layout</span>() {
+  <span class="kw">return</span> (
+    <span class="tag">&lt;div</span> <span class="attr">className</span>=<span class="str">"flex min-h-screen bg-gray-950"</span><span class="tag">&gt;</span>
+      <span class="tag">&lt;Sidebar /&gt;</span>              <span class="cmt">← always rendered, never unmounts</span>
+      <span class="tag">&lt;main</span> <span class="attr">className</span>=<span class="str">"flex-1"</span><span class="tag">&gt;</span>
+        <span class="tag">&lt;Outlet /&gt;</span>            <span class="cmt">← child route renders HERE</span>
+      <span class="tag">&lt;/main&gt;</span>
+    <span class="tag">&lt;/div&gt;</span>
+  );
+}</code></pre>
+
+  <div class="diagram">URL: /purchases
+
+React Router renders:
+┌─────────────────────────────────────────────────────┐
+│  ProtectedLayout (auth guard)                       │
+│  └── SectionsProvider                               │
+│      └── Layout                                     │
+│          ├── Sidebar          ← stays mounted       │
+│          └── &lt;main&gt;                                 │
+│              └── &lt;Outlet /&gt;  ← RequireAuth          │
+│                  └── &lt;Outlet /&gt; ← PurchasesPage    │
+└─────────────────────────────────────────────────────┘
+
+URL changes to: /tenders
+
+React Router re-renders ONLY the Outlet content:
+└── PurchasesPage ❌ unmounts
+└── TendersPage   ✅ mounts
+
+Sidebar stays mounted — no flicker, no re-fetch of sections</div>
+
+  <h2>URL Parameters — useParams</h2>
+  <p>The <code>:sectionId</code> in a path is a URL parameter. It's a wildcard that matches any value and makes that value available in code:</p>
+  <pre><code><span class="cmt">// Route definition in App.jsx</span>
+<span class="tag">&lt;Route</span> <span class="attr">path</span>=<span class="str">"/section/:sectionId/*"</span> <span class="attr">element</span>=<span class="jsx">{&lt;SectionDashboard /&gt;}</span> <span class="tag">/&gt;</span>
+
+<span class="cmt">// Inside SectionDashboard.jsx, read the sectionId from the URL</span>
+<span class="kw">import</span> { useParams } <span class="kw">from</span> <span class="str">'react-router-dom'</span>;
+<span class="kw">const</span> { sectionId } = <span class="fn">useParams</span>();  <span class="cmt">// e.g. '3' for /section/3/</span></code></pre>
+
+  <p>The <code>/*</code> at the end of the path means "this route also handles any sub-paths". Without it, only <code>/section/3</code> would match — not <code>/section/3/personnel</code>. With <code>/*</code>, the section dashboard can define its own sub-routes internally.</p>
+
+  <h2>NavLink — Active Styling</h2>
+  <p>The sidebar uses <code>NavLink</code> instead of a plain <code>&lt;a&gt;</code> tag. NavLink automatically knows if its destination is the current URL and lets you apply different styles when it's "active":</p>
+  <pre><code><span class="cmt">// components/Sidebar.jsx — the SidebarLink helper</span>
+<span class="kw">function</span> <span class="fn">SidebarLink</span>({ to, icon, label }) {
+  <span class="kw">return</span> (
+    <span class="tag">&lt;NavLink</span>
+      <span class="attr">to</span>=<span class="jsx">{to}</span>
+      <span class="attr">end</span>                      <span class="cmt">← only active on EXACT match</span>
+      <span class="attr">className</span>=<span class="jsx">{({ isActive }) =>
+        `flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm transition-colors ${
+          isActive
+            ? 'bg-indigo-600/20 text-indigo-400 font-medium'  <span class="cmt">← active styles</span>
+            : 'text-gray-400 hover:text-white hover:bg-gray-800'  <span class="cmt">← default styles</span>
+        }`
+      }</span>
+    <span class="tag">&gt;</span>
+      <span class="jsx">{icon}</span>
+      <span class="tag">&lt;span&gt;</span><span class="jsx">{label}</span><span class="tag">&lt;/span&gt;</span>
+    <span class="tag">&lt;/NavLink&gt;</span>
+  );
+}</code></pre>
+
+  <p>Notice that <code>className</code> here receives a <strong>function</strong> instead of a string. NavLink passes <code>{ isActive }</code> to that function, and you return the appropriate class string. The <code>end</code> prop prevents <code>/admin</code> from staying active when you're on <code>/admin/users</code>.</p>
+
+  <div class="callout tip"><div class="callout-icon"></div><p>The difference between <code>&lt;Link&gt;</code> and <code>&lt;NavLink&gt;</code>: both prevent page reloads and update the URL. But NavLink additionally tracks whether it matches the current URL and gives you the <code>isActive</code> flag for styling. Use NavLink in navigation menus, Link for other internal links.</p></div>
+
+  <h2>The /report/:token Route — A Public Route</h2>
+  <p>Not all routes need authentication. The public report route is accessible by anyone with the token:</p>
+  <pre><code><span class="cmt">// App.jsx — outside any auth guard</span>
+<span class="tag">&lt;Route</span> <span class="attr">path</span>=<span class="str">"/report/:token"</span> <span class="attr">element</span>=<span class="jsx">{&lt;PublicReport /&gt;}</span> <span class="tag">/&gt;</span>
+
+<span class="cmt">// PublicReport.jsx reads the token from the URL</span>
+<span class="kw">const</span> { token } = <span class="fn">useParams</span>();
+<span class="cmt">// Calls the public API endpoint with that token</span>
+report.<span class="fn">getPublic</span>(token).then(...);</code></pre>
+
+  <div class="page-nav">
+    <a href="03-entry-point.html">← Entry Point</a>
+    <a href="05-state-and-hooks.html">Next: State &amp; Hooks →</a>
+  </div>
+</main>
+</body>
+</html>

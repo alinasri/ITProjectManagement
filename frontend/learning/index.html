@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Frontend Learning Hub</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Segoe UI', system-ui, sans-serif; background: #0f172a; color: #e2e8f0; min-height: 100vh; }
+  .hero { background: linear-gradient(135deg, #1e1b4b 0%, #0f172a 100%); padding: 60px 40px; text-align: center; border-bottom: 1px solid #1e293b; }
+  .hero h1 { font-size: 2.8rem; font-weight: 800; color: #fff; margin-bottom: 12px; }
+  .hero h1 span { color: #818cf8; }
+  .hero p { font-size: 1.15rem; color: #94a3b8; max-width: 620px; margin: 0 auto; line-height: 1.7; }
+  .badge { display: inline-block; background: #6366f1; color: #fff; font-size: 0.75rem; font-weight: 700; padding: 3px 10px; border-radius: 999px; margin-top: 16px; letter-spacing: 0.05em; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 20px; padding: 40px; max-width: 1200px; margin: 0 auto; }
+  .card { background: #1e293b; border: 1px solid #334155; border-radius: 12px; padding: 28px; text-decoration: none; color: inherit; display: flex; flex-direction: column; gap: 12px; transition: all 0.2s; position: relative; overflow: hidden; }
+  .card::before { content: ''; position: absolute; inset: 0; background: linear-gradient(135deg, rgba(129,140,248,0.05), transparent); opacity: 0; transition: opacity 0.2s; }
+  .card:hover { border-color: #818cf8; transform: translateY(-2px); box-shadow: 0 8px 30px rgba(129,140,248,0.1); }
+  .card:hover::before { opacity: 1; }
+  .card-num { font-size: 0.75rem; font-weight: 700; color: #818cf8; letter-spacing: 0.1em; text-transform: uppercase; }
+  .card-icon { font-size: 2rem; }
+  .card h2 { font-size: 1.15rem; font-weight: 700; color: #f1f5f9; }
+  .card p { font-size: 0.9rem; color: #94a3b8; line-height: 1.6; }
+  .card-tags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: auto; padding-top: 8px; }
+  .tag { font-size: 0.7rem; background: #0f172a; color: #64748b; border: 1px solid #1e293b; padding: 2px 8px; border-radius: 4px; }
+  .stack { padding: 20px 40px 0; max-width: 1200px; margin: 0 auto; }
+  .stack h2 { font-size: 1rem; font-weight: 700; color: #64748b; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 16px; }
+  .stack-pills { display: flex; flex-wrap: wrap; gap: 10px; }
+  .pill { background: #1e293b; border: 1px solid #334155; border-radius: 8px; padding: 8px 16px; font-size: 0.85rem; color: #94a3b8; display: flex; align-items: center; gap: 8px; }
+  .pill strong { color: #e2e8f0; }
+  .section-label { padding: 8px 40px 6px; font-size: 0.75rem; font-weight: 700; color: #475569; text-transform: uppercase; letter-spacing: 0.08em; max-width: 1200px; margin: 32px auto 0; }
+  .backend-link { display: block; text-align: center; padding: 16px; margin: 0 40px; max-width: 1120px; margin-left: auto; margin-right: auto; background: #1e293b; border: 1px solid #334155; border-radius: 10px; color: #64748b; text-decoration: none; font-size: 0.85rem; margin-top: 16px; transition: all 0.2s; }
+  .backend-link:hover { color: #94a3b8; border-color: #475569; }
+  footer { text-align: center; padding: 40px; color: #475569; font-size: 0.85rem; }
+</style>
+</head>
+<body>
+
+<div class="hero">
+  <h1>Frontend <span>Learning Hub</span></h1>
+  <p>A complete beginner-friendly guide to the IT Project Management frontend. Every concept is explained using the actual code in this project, with no assumed React knowledge.</p>
+  <div class="badge">React + Vite + Tailwind CSS + React Router</div>
+</div>
+
+<div class="stack">
+  <h2>Tech Stack</h2>
+  <div class="stack-pills">
+    <div class="pill">⚛️ <strong>React 19</strong> — UI library (components)</div>
+    <div class="pill">⚡ <strong>Vite</strong> — Dev server & build tool</div>
+    <div class="pill">🎨 <strong>Tailwind CSS</strong> — Utility-first styling</div>
+    <div class="pill">🗺️ <strong>React Router v7</strong> — Client-side navigation</div>
+    <div class="pill">🌐 <strong>Axios</strong> — HTTP requests to backend</div>
+    <div class="pill">🎯 <strong>lucide-react</strong> — Icon library</div>
+  </div>
+</div>
+
+<div class="section-label">Foundations — Start Here</div>
+<div class="grid" style="padding-top: 16px;">
+
+  <a href="01-architecture.html" class="card">
+    <div class="card-num">Lesson 01</div>
+    <div class="card-icon">🏗️</div>
+    <h2>Architecture Overview</h2>
+    <p>What is React? What is a Single Page App? Understand the folder structure and how pages, components, context, and API all fit together.</p>
+    <div class="card-tags">
+      <span class="tag">SPA</span>
+      <span class="tag">folder structure</span>
+      <span class="tag">mental model</span>
+    </div>
+  </a>
+
+  <a href="02-how-react-works.html" class="card">
+    <div class="card-num">Lesson 02</div>
+    <div class="card-icon">⚛️</div>
+    <h2>How React Works</h2>
+    <p>Components, JSX, props, and state — the four pillars of React. Understand re-rendering and why React is different from plain HTML/JS.</p>
+    <div class="card-tags">
+      <span class="tag">JSX</span>
+      <span class="tag">components</span>
+      <span class="tag">props</span>
+      <span class="tag">state</span>
+    </div>
+  </a>
+
+  <a href="03-entry-point.html" class="card">
+    <div class="card-num">Lesson 03</div>
+    <div class="card-icon">🚀</div>
+    <h2>Entry Point: main.jsx & App.jsx</h2>
+    <p>How the app boots — from the single HTML file to the React root. A deep dive into App.jsx and every component it defines.</p>
+    <div class="card-tags">
+      <span class="tag">main.jsx</span>
+      <span class="tag">App.jsx</span>
+      <span class="tag">StrictMode</span>
+      <span class="tag">providers</span>
+    </div>
+  </a>
+
+</div>
+
+<div class="section-label">Core React Concepts</div>
+<div class="grid" style="padding-top: 16px;">
+
+  <a href="04-routing.html" class="card">
+    <div class="card-num">Lesson 04</div>
+    <div class="card-icon">🗺️</div>
+    <h2>Routing</h2>
+    <p>Client-side navigation with React Router. BrowserRouter, Routes, Route, Outlet, Navigate, NavLink, useNavigate, and the ProtectedLayout pattern.</p>
+    <div class="card-tags">
+      <span class="tag">React Router</span>
+      <span class="tag">Outlet</span>
+      <span class="tag">Navigate</span>
+      <span class="tag">protected routes</span>
+    </div>
+  </a>
+
+  <a href="05-state-and-hooks.html" class="card">
+    <div class="card-num">Lesson 05</div>
+    <div class="card-icon">🪝</div>
+    <h2>State & Hooks</h2>
+    <p>useState, useEffect, useRef, useCallback — explained in depth with real examples from this codebase. Includes the Rules of Hooks.</p>
+    <div class="card-tags">
+      <span class="tag">useState</span>
+      <span class="tag">useEffect</span>
+      <span class="tag">useRef</span>
+      <span class="tag">useCallback</span>
+    </div>
+  </a>
+
+  <a href="06-context.html" class="card">
+    <div class="card-num">Lesson 06</div>
+    <div class="card-icon">🌐</div>
+    <h2>Context API</h2>
+    <p>Share data across the entire app without passing props everywhere. AuthContext and SectionsContext explained from createContext to useContext.</p>
+    <div class="card-tags">
+      <span class="tag">createContext</span>
+      <span class="tag">useContext</span>
+      <span class="tag">AuthContext</span>
+      <span class="tag">SectionsContext</span>
+    </div>
+  </a>
+
+</div>
+
+<div class="section-label">The App's Layers</div>
+<div class="grid" style="padding-top: 16px;">
+
+  <a href="07-components.html" class="card">
+    <div class="card-num">Lesson 07</div>
+    <div class="card-icon">🧩</div>
+    <h2>Components</h2>
+    <p>Every reusable component in this app explained: Layout, Sidebar, Modal, ConfirmDialog, StatCard, FilterBar, StatusBadge, and more.</p>
+    <div class="card-tags">
+      <span class="tag">Layout</span>
+      <span class="tag">Sidebar</span>
+      <span class="tag">Modal</span>
+      <span class="tag">reusability</span>
+    </div>
+  </a>
+
+  <a href="08-api-layer.html" class="card">
+    <div class="card-num">Lesson 08</div>
+    <div class="card-icon">🔌</div>
+    <h2>API Layer</h2>
+    <p>How the frontend talks to the backend. Axios, the client.js setup, the 401 interceptor, and the organized api/index.js module pattern.</p>
+    <div class="card-tags">
+      <span class="tag">axios</span>
+      <span class="tag">client.js</span>
+      <span class="tag">interceptors</span>
+      <span class="tag">Vite proxy</span>
+    </div>
+  </a>
+
+  <a href="09-tailwind.html" class="card">
+    <div class="card-num">Lesson 09</div>
+    <div class="card-icon">🎨</div>
+    <h2>Tailwind CSS</h2>
+    <p>Utility-first CSS from scratch. How Tailwind works, the most-used classes in this project, dark theme, responsive design, and hover states.</p>
+    <div class="card-tags">
+      <span class="tag">utility classes</span>
+      <span class="tag">flex</span>
+      <span class="tag">dark theme</span>
+      <span class="tag">className</span>
+    </div>
+  </a>
+
+</div>
+
+<div class="section-label">Putting It All Together</div>
+<div class="grid" style="padding-top: 16px;">
+
+  <a href="10-auth-flow.html" class="card">
+    <div class="card-num">Lesson 10</div>
+    <div class="card-icon">🔐</div>
+    <h2>Authentication Flow</h2>
+    <p>The complete frontend auth cycle: app loads → session check → login form → protected routes → logout. Every step in the React code.</p>
+    <div class="card-tags">
+      <span class="tag">AuthContext</span>
+      <span class="tag">httpOnly cookie</span>
+      <span class="tag">protected routes</span>
+      <span class="tag">session</span>
+    </div>
+  </a>
+
+  <a href="11-complete-walkthrough.html" class="card">
+    <div class="card-num">Lesson 11</div>
+    <div class="card-icon">🎯</div>
+    <h2>Complete Walkthrough</h2>
+    <p>Follow a real user action end-to-end: "User logs in and views the Purchases page" — every function, every re-render, no gaps.</p>
+    <div class="card-tags">
+      <span class="tag">end-to-end</span>
+      <span class="tag">login flow</span>
+      <span class="tag">data fetch</span>
+      <span class="tag">re-render</span>
+    </div>
+  </a>
+
+</div>
+
+<a href="../backend/learning/index.html" class="backend-link">
+  Also studying the backend? → View the Backend Learning Hub
+</a>
+
+<footer>Start with Lesson 01 and work through them in order. Each lesson builds on the previous one.</footer>
+</body>
+</html>

@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Lesson 09 — Tailwind CSS</title>
+<link rel="stylesheet" href="_shared.css">
+</head>
+<body>
+
+<nav>
+  <div class="logo"><a href="index.html">Frontend Learning Hub</a><span>IT Project Management</span></div>
+  <div class="section-label">Foundations</div>
+  <a href="01-architecture.html"><span class="num">01</span> Architecture</a>
+  <a href="02-how-react-works.html"><span class="num">02</span> How React Works</a>
+  <a href="03-entry-point.html"><span class="num">03</span> Entry Point</a>
+  <div class="section-label">Core Concepts</div>
+  <a href="04-routing.html"><span class="num">04</span> Routing</a>
+  <a href="05-state-and-hooks.html"><span class="num">05</span> State &amp; Hooks</a>
+  <a href="06-context.html"><span class="num">06</span> Context API</a>
+  <div class="section-label">The App's Layers</div>
+  <a href="07-components.html"><span class="num">07</span> Components</a>
+  <a href="08-api-layer.html"><span class="num">08</span> API Layer</a>
+  <a href="09-tailwind.html" class="active"><span class="num">09</span> Tailwind CSS</a>
+  <div class="section-label">Putting It Together</div>
+  <a href="10-auth-flow.html"><span class="num">10</span> Auth Flow</a>
+  <a href="11-complete-walkthrough.html"><span class="num">11</span> Walkthrough</a>
+</nav>
+
+<main>
+  <h1>🎨 Tailwind CSS</h1>
+  <p class="subtitle">This app uses no hand-written CSS files for components. All styling comes from Tailwind CSS — a "utility-first" CSS framework where you apply small, single-purpose classes directly in your JSX.</p>
+
+  <h2>What Is Utility-First CSS?</h2>
+  <p>Traditional CSS: you write a class name, then define what it does in a separate CSS file:</p>
+  <pre><code><span class="cmt">/* Traditional approach */</span>
+.submit-button {
+  background-color: #4f46e5;
+  color: white;
+  padding: 12px 24px;
+  border-radius: 12px;
+  font-weight: 600;
+}</code></pre>
+
+  <p>Tailwind approach: you apply the styles directly with pre-defined utility classes:</p>
+  <pre><code><span class="cmt">// Tailwind approach — the same button</span>
+<span class="tag">&lt;button</span> <span class="attr">className</span>=<span class="str">"bg-indigo-600 text-white px-6 py-3 rounded-xl font-semibold"</span><span class="tag">&gt;</span>
+  Submit
+<span class="tag">&lt;/button&gt;</span></code></pre>
+
+  <p>Instead of naming the button and writing CSS somewhere else, you just write the styles inline. There's no separate stylesheet to maintain, no risk of CSS specificity conflicts, and no unused CSS shipped to the browser.</p>
+
+  <div class="callout tip"><div class="callout-icon"></div><p>Tailwind generates only the CSS classes you actually use, so the production bundle is very small. The utility class names follow a consistent, predictable pattern — once you learn the system, you can guess any class name.</p></div>
+
+  <h2>How Tailwind Works in This Project</h2>
+  <p>Tailwind is integrated via the Vite plugin (<code>@tailwindcss/vite</code> in <code>vite.config.js</code>). The import in <code>main.jsx</code>:</p>
+  <pre><code><span class="kw">import</span> <span class="str">'./index.css'</span>  <span class="cmt">← includes @import "tailwindcss" which loads all Tailwind</span></code></pre>
+  <p>Tailwind scans all your JSX files, finds every <code>className</code> string, and generates only the CSS for those classes. No configuration needed beyond the import.</p>
+
+  <h2>The Naming System</h2>
+  <p>Tailwind class names follow a pattern: <code>property-value</code>. Here are the most used categories in this project:</p>
+
+  <h3>Colors</h3>
+  <p>Colors have a <strong>name</strong> and a <strong>shade</strong> (50=lightest → 950=darkest):</p>
+  <pre><code><span class="cmt">// Background colors</span>
+bg-gray-950   <span class="cmt">← very dark gray (used as page background)</span>
+bg-gray-900   <span class="cmt">← dark gray (cards, sidebar)</span>
+bg-gray-800   <span class="cmt">← medium-dark gray (inputs, table rows)</span>
+bg-indigo-600 <span class="cmt">← indigo blue (primary buttons, active states)</span>
+
+<span class="cmt">// Text colors</span>
+text-white    <span class="cmt">← pure white</span>
+text-gray-400 <span class="cmt">← muted gray (secondary text)</span>
+text-gray-500 <span class="cmt">← dimmer gray (placeholder, labels)</span>
+text-indigo-400 <span class="cmt">← soft indigo (active nav links)</span>
+text-red-300  <span class="cmt">← light red (error messages)</span>
+
+<span class="cmt">// Border colors</span>
+border-gray-700  <span class="cmt">← subtle border</span>
+border-gray-800  <span class="cmt">← very subtle border</span>
+border-indigo-500 <span class="cmt">← focused input border</span></code></pre>
+
+  <h3>Opacity modifier</h3>
+  <p>Add <code>/N</code> to any color to set opacity (0-100):</p>
+  <pre><code>bg-indigo-600/20   <span class="cmt">← indigo background at 20% opacity (active nav item)</span>
+bg-black/60        <span class="cmt">← black at 60% opacity (modal backdrop)</span>
+border-indigo-800/40 <span class="cmt">← border at 40% opacity</span></code></pre>
+
+  <h3>Spacing (padding and margin)</h3>
+  <p>The number is in units of 4px (1 unit = 4px):</p>
+  <pre><code>p-4     <span class="cmt">← padding on all sides: 16px</span>
+px-6    <span class="cmt">← horizontal padding (left+right): 24px</span>
+py-3    <span class="cmt">← vertical padding (top+bottom): 12px</span>
+pt-3    <span class="cmt">← padding-top only</span>
+m-2     <span class="cmt">← margin: 8px</span>
+mx-auto <span class="cmt">← horizontal margin: auto (centers the element)</span>
+mt-4    <span class="cmt">← margin-top: 16px</span></code></pre>
+
+  <h3>Sizing (width and height)</h3>
+  <pre><code>w-full     <span class="cmt">← width: 100%</span>
+w-64       <span class="cmt">← width: 256px (16 * 4 = 64 * 4 = 256)</span>
+h-screen   <span class="cmt">← height: 100vh (full viewport height)</span>
+h-8        <span class="cmt">← height: 32px</span>
+max-w-7xl  <span class="cmt">← max-width: 80rem (the content area limit)</span>
+max-w-md   <span class="cmt">← max-width: 28rem (login form width)</span></code></pre>
+
+  <h3>Layout (flexbox)</h3>
+  <p>Almost all layout in this project uses flexbox:</p>
+  <pre><code>flex           <span class="cmt">← display: flex</span>
+flex-1         <span class="cmt">← flex-grow: 1 (take up remaining space)</span>
+flex-col       <span class="cmt">← flex-direction: column</span>
+items-center   <span class="cmt">← align-items: center (vertical center)</span>
+justify-center <span class="cmt">← justify-content: center (horizontal center)</span>
+justify-between <span class="cmt">← space-between (push items to edges)</span>
+gap-3          <span class="cmt">← gap: 12px between flex children</span>
+shrink-0       <span class="cmt">← flex-shrink: 0 (don't shrink even if no room)</span></code></pre>
+
+  <h3>Typography</h3>
+  <pre><code>text-sm     <span class="cmt">← font-size: 0.875rem (14px)</span>
+text-base   <span class="cmt">← font-size: 1rem (16px)</span>
+text-lg     <span class="cmt">← font-size: 1.125rem (18px)</span>
+text-2xl    <span class="cmt">← font-size: 1.5rem (24px)</span>
+font-medium <span class="cmt">← font-weight: 500</span>
+font-semibold <span class="cmt">← font-weight: 600</span>
+font-bold   <span class="cmt">← font-weight: 700</span>
+truncate    <span class="cmt">← overflow: hidden; text-overflow: ellipsis (shows "..." when text too long)</span>
+uppercase   <span class="cmt">← text-transform: uppercase</span>
+tracking-wider <span class="cmt">← letter-spacing: wider</span></code></pre>
+
+  <h3>Borders and Rounded Corners</h3>
+  <pre><code>border       <span class="cmt">← border-width: 1px</span>
+border-2     <span class="cmt">← border-width: 2px</span>
+rounded      <span class="cmt">← border-radius: 4px</span>
+rounded-lg   <span class="cmt">← border-radius: 8px</span>
+rounded-xl   <span class="cmt">← border-radius: 12px (used for most cards and buttons)</span>
+rounded-2xl  <span class="cmt">← border-radius: 16px (larger cards)</span>
+rounded-full <span class="cmt">← border-radius: 9999px (circle)</span></code></pre>
+
+  <h3>Hover, Focus, and Disabled States</h3>
+  <p>Tailwind has modifier prefixes that apply styles only in certain states:</p>
+  <pre><code><span class="cmt">// Hover: apply styles when mouse is over the element</span>
+hover:text-white
+hover:bg-gray-800
+hover:text-indigo-400
+hover:bg-indigo-500
+
+<span class="cmt">// Focus: apply when element is focused (keyboard nav / input click)</span>
+focus:outline-none        <span class="cmt">← remove the default blue outline</span>
+focus:border-indigo-500   <span class="cmt">← show indigo border when focused</span>
+focus:ring-1              <span class="cmt">← add a focus ring</span>
+focus:ring-indigo-500
+
+<span class="cmt">// Disabled: apply when element has the "disabled" attribute</span>
+disabled:opacity-60
+disabled:cursor-not-allowed
+
+<span class="cmt">// Transition: animate the change (applied alongside the changing classes)</span>
+transition-colors   <span class="cmt">← smoothly animate color changes</span></code></pre>
+
+  <p>Real example from LoginPage — a button that changes on hover and becomes disabled:</p>
+  <pre><code><span class="tag">&lt;button</span>
+  <span class="attr">disabled</span>=<span class="jsx">{loading}</span>
+  <span class="attr">className</span>=<span class="str">"w-full bg-indigo-600 hover:bg-indigo-500 disabled:opacity-60
+             disabled:cursor-not-allowed text-white font-semibold
+             rounded-xl py-3 transition-colors"</span>
+<span class="tag">&gt;</span></code></pre>
+
+  <h2>Reading a Complex className</h2>
+  <p>Let's decode a real className from Sidebar.jsx step by step:</p>
+  <pre><code><span class="str">"w-64 shrink-0 bg-gray-900 border-l border-gray-800 flex flex-col h-screen sticky top-0 overflow-y-auto"</span></code></pre>
+  <table>
+    <tr><th>Class</th><th>Meaning</th></tr>
+    <tr><td><code>w-64</code></td><td>width: 256px</td></tr>
+    <tr><td><code>shrink-0</code></td><td>don't shrink when space is tight (sidebar stays 256px wide)</td></tr>
+    <tr><td><code>bg-gray-900</code></td><td>dark gray background</td></tr>
+    <tr><td><code>border-l</code></td><td>border on left side only</td></tr>
+    <tr><td><code>border-gray-800</code></td><td>very subtle dark border color</td></tr>
+    <tr><td><code>flex flex-col</code></td><td>vertical flex container (children stack top-to-bottom)</td></tr>
+    <tr><td><code>h-screen</code></td><td>height: 100vh (full viewport)</td></tr>
+    <tr><td><code>sticky top-0</code></td><td>stays fixed at the top while page scrolls</td></tr>
+    <tr><td><code>overflow-y-auto</code></td><td>scrollable if nav links exceed screen height</td></tr>
+  </table>
+
+  <h2>Dynamic classNames in React</h2>
+  <p>Sometimes you need to change classes based on state. Use template literals or conditional logic in the <code>className</code>:</p>
+  <pre><code><span class="cmt">// Conditional class based on isActive (NavLink in Sidebar)</span>
+<span class="attr">className</span>=<span class="jsx">{({ isActive }) => `
+  flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm transition-colors
+  ${isActive
+    ? 'bg-indigo-600/20 text-indigo-400 font-medium'
+    : 'text-gray-400 hover:text-white hover:bg-gray-800'
+  }
+`}</span>
+
+<span class="cmt">// Conditional based on a state variable</span>
+<span class="attr">className</span>=<span class="jsx">{`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+  activeStatus === s.value
+    ? 'bg-indigo-600 text-white'
+    : 'bg-gray-800 border border-gray-700 text-gray-400 hover:text-gray-200'
+}`}</span></code></pre>
+
+  <div class="callout warn"><div class="callout-icon"></div><p>Don't build class names by concatenating strings like <code>'bg-' + color + '-600'</code>. Tailwind can't detect dynamically built class names — it only finds complete class names in your source code. Always write the full class name: <code>'bg-indigo-600'</code>, not <code>'bg-' + 'indigo' + '-600'</code>. This is why StatCard defines a full <code>colors</code> object mapping each color name to a complete class string.</p></div>
+
+  <div class="page-nav">
+    <a href="08-api-layer.html">← API Layer</a>
+    <a href="10-auth-flow.html">Next: Auth Flow →</a>
+  </div>
+</main>
+</body>
+</html>

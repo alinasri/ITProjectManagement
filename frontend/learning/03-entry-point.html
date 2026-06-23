@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Lesson 03 — Entry Point</title>
+<link rel="stylesheet" href="_shared.css">
+</head>
+<body>
+
+<nav>
+  <div class="logo"><a href="index.html">Frontend Learning Hub</a><span>IT Project Management</span></div>
+  <div class="section-label">Foundations</div>
+  <a href="01-architecture.html"><span class="num">01</span> Architecture</a>
+  <a href="02-how-react-works.html"><span class="num">02</span> How React Works</a>
+  <a href="03-entry-point.html" class="active"><span class="num">03</span> Entry Point</a>
+  <div class="section-label">Core Concepts</div>
+  <a href="04-routing.html"><span class="num">04</span> Routing</a>
+  <a href="05-state-and-hooks.html"><span class="num">05</span> State &amp; Hooks</a>
+  <a href="06-context.html"><span class="num">06</span> Context API</a>
+  <div class="section-label">The App's Layers</div>
+  <a href="07-components.html"><span class="num">07</span> Components</a>
+  <a href="08-api-layer.html"><span class="num">08</span> API Layer</a>
+  <a href="09-tailwind.html"><span class="num">09</span> Tailwind CSS</a>
+  <div class="section-label">Putting It Together</div>
+  <a href="10-auth-flow.html"><span class="num">10</span> Auth Flow</a>
+  <a href="11-complete-walkthrough.html"><span class="num">11</span> Walkthrough</a>
+</nav>
+
+<main>
+  <h1>🚀 Entry Point: main.jsx &amp; App.jsx</h1>
+  <p class="subtitle">The app starts with two files. <code>main.jsx</code> boots React into the browser. <code>App.jsx</code> defines the entire route structure and global providers. This lesson dissects both line by line.</p>
+
+  <h2>Step 1 — The Browser Loads index.html</h2>
+  <p>When you open the app in a browser, the server sends <code>frontend/index.html</code>. The relevant parts are:</p>
+  <pre><code><span class="tag">&lt;body&gt;</span>
+  <span class="tag">&lt;div</span> <span class="attr">id</span>=<span class="str">"root"</span><span class="tag">&gt;&lt;/div&gt;</span>               <span class="cmt">← empty container</span>
+  <span class="tag">&lt;script</span> <span class="attr">type</span>=<span class="str">"module"</span> <span class="attr">src</span>=<span class="str">"/src/main.jsx"</span><span class="tag">&gt;&lt;/script&gt;</span>
+<span class="tag">&lt;/body&gt;</span></code></pre>
+  <p>The browser downloads and runs <code>main.jsx</code> next.</p>
+
+  <h2>Step 2 — main.jsx Boots React</h2>
+  <pre><code><span class="cmt">// src/main.jsx</span>
+<span class="kw">import</span> { StrictMode } <span class="kw">from</span> <span class="str">'react'</span>
+<span class="kw">import</span> { createRoot } <span class="kw">from</span> <span class="str">'react-dom/client'</span>
+<span class="kw">import</span> <span class="str">'./index.css'</span>
+<span class="kw">import</span> App <span class="kw">from</span> <span class="str">'./App.jsx'</span>
+
+<span class="fn">createRoot</span>(document.<span class="fn">getElementById</span>(<span class="str">'root'</span>)).<span class="fn">render</span>(
+  <span class="tag">&lt;StrictMode&gt;</span>
+    <span class="tag">&lt;App /&gt;</span>
+  <span class="tag">&lt;/StrictMode&gt;</span>,
+)</code></pre>
+
+  <p>Let's break down each line:</p>
+  <table>
+    <tr><th>Line</th><th>What it does</th></tr>
+    <tr><td><code>import { StrictMode }</code></td><td>A React helper that finds bugs by running effects twice in development</td></tr>
+    <tr><td><code>import { createRoot }</code></td><td>React's DOM renderer — connects React to the browser DOM</td></tr>
+    <tr><td><code>import './index.css'</code></td><td>Loads global CSS (Tailwind base styles)</td></tr>
+    <tr><td><code>import App</code></td><td>The root React component that contains everything</td></tr>
+    <tr><td><code>createRoot(document.getElementById('root'))</code></td><td>Finds the empty <code>&lt;div id="root"&gt;</code> in index.html</td></tr>
+    <tr><td><code>.render(&lt;StrictMode&gt;&lt;App /&gt;&lt;/StrictMode&gt;)</code></td><td>Mounts the entire React app into that div</td></tr>
+  </table>
+
+  <div class="callout info"><div class="callout-icon"></div><p><strong>StrictMode</strong> is only active in development. It intentionally runs <code>useEffect</code> and other side effects <strong>twice</strong> on mount to expose bugs that depend on side effects running exactly once. This is why <code>AuthContext.jsx</code> uses a <code>useRef</code> guard — to prevent the auth check from running twice.</p></div>
+
+  <h2>Step 3 — App.jsx: The Root Component</h2>
+  <p>App.jsx is the most important file in the frontend. It wires together the router, the global providers, and all the route definitions. Here's the full file with annotations:</p>
+
+  <pre><code><span class="cmt">// src/App.jsx</span>
+<span class="kw">import</span> { BrowserRouter, Routes, Route, Navigate, Outlet } <span class="kw">from</span> <span class="str">'react-router-dom'</span>;
+<span class="kw">import</span> { AuthProvider, useAuth } <span class="kw">from</span> <span class="str">'./context/AuthContext'</span>;
+<span class="kw">import</span> { SectionsProvider } <span class="kw">from</span> <span class="str">'./context/SectionsContext'</span>;
+<span class="kw">import</span> Layout <span class="kw">from</span> <span class="str">'./components/Layout'</span>;
+<span class="kw">import</span> LoginPage <span class="kw">from</span> <span class="str">'./pages/LoginPage'</span>;
+<span class="cmt">// ... more imports</span></code></pre>
+
+  <h2>The Helper Components Defined in App.jsx</h2>
+  <p>App.jsx defines 5 small helper components before the main <code>App</code> component. Each solves a specific routing problem.</p>
+
+  <h3>1. FullPageSpinner</h3>
+  <pre><code><span class="kw">function</span> <span class="fn">FullPageSpinner</span>() {
+  <span class="kw">return</span> (
+    <span class="tag">&lt;div</span> <span class="attr">className</span>=<span class="str">"flex items-center justify-center h-screen bg-gray-950"</span><span class="tag">&gt;</span>
+      <span class="tag">&lt;div</span> <span class="attr">className</span>=<span class="str">"w-8 h-8 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin"</span> <span class="tag">/&gt;</span>
+    <span class="tag">&lt;/div&gt;</span>
+  );
+}</code></pre>
+  <p>A simple animated spinner shown while the app is checking whether the user is logged in. The Tailwind class <code>animate-spin</code> rotates the element. <code>border-t-transparent</code> makes only three sides of the border visible, creating the arc effect.</p>
+
+  <h3>2. PublicOnly</h3>
+  <pre><code><span class="kw">function</span> <span class="fn">PublicOnly</span>({ children }) {
+  <span class="kw">const</span> { user, loading } = <span class="fn">useAuth</span>();
+  <span class="cmt">// If already logged in (and auth check is done), redirect away from login</span>
+  <span class="kw">if</span> (!loading && user && !user.must_change_password) {
+    <span class="kw">return</span> <span class="tag">&lt;Navigate</span> <span class="attr">to</span>=<span class="str">"/"</span> <span class="attr">replace</span> <span class="tag">/&gt;</span>;
+  }
+  <span class="kw">return</span> children;
+}</code></pre>
+  <p>Wraps the Login page. If you're already logged in and navigate to <code>/login</code>, it redirects you home instead. Crucially, it does <strong>not</strong> block the login page while <code>loading</code> is true — the login form appears immediately. Only after the auth check finishes does it redirect if needed.</p>
+
+  <h3>3. ProtectedLayout</h3>
+  <pre><code><span class="kw">function</span> <span class="fn">ProtectedLayout</span>() {
+  <span class="kw">const</span> { user, loading } = <span class="fn">useAuth</span>();
+  <span class="kw">if</span> (loading) <span class="kw">return</span> <span class="tag">&lt;FullPageSpinner /&gt;</span>;
+  <span class="kw">if</span> (!user)   <span class="kw">return</span> <span class="tag">&lt;Navigate</span> <span class="attr">to</span>=<span class="str">"/login"</span> <span class="attr">replace</span> <span class="tag">/&gt;</span>;
+  <span class="kw">if</span> (user.must_change_password) <span class="kw">return</span> <span class="tag">&lt;Navigate</span> <span class="attr">to</span>=<span class="str">"/change-password"</span> <span class="attr">replace</span> <span class="tag">/&gt;</span>;
+  <span class="kw">return</span> (
+    <span class="tag">&lt;SectionsProvider&gt;</span>
+      <span class="tag">&lt;Layout /&gt;</span>
+    <span class="tag">&lt;/SectionsProvider&gt;</span>
+  );
+}</code></pre>
+  <p>This is the gate for all dashboard routes. It:</p>
+  <ol>
+    <li>Shows a spinner while checking auth status</li>
+    <li>Redirects to <code>/login</code> if not authenticated</li>
+    <li>Redirects to <code>/change-password</code> if password must be changed</li>
+    <li>Otherwise renders the Layout (sidebar + content area) wrapped in SectionsProvider</li>
+  </ol>
+  <p>Notice that <code>SectionsProvider</code> is inside <code>ProtectedLayout</code> — sections are only fetched once the user is confirmed to be logged in. No point fetching sections for anonymous visitors.</p>
+
+  <h3>4. RoleRedirect</h3>
+  <pre><code><span class="kw">function</span> <span class="fn">RoleRedirect</span>() {
+  <span class="kw">const</span> { user, loading } = <span class="fn">useAuth</span>();
+  <span class="kw">if</span> (loading) <span class="kw">return</span> <span class="tag">&lt;FullPageSpinner /&gt;</span>;
+  <span class="kw">if</span> (!user) <span class="kw">return</span> <span class="tag">&lt;Navigate</span> <span class="attr">to</span>=<span class="str">"/login"</span> <span class="attr">replace</span> <span class="tag">/&gt;</span>;
+  <span class="kw">if</span> (user.role === <span class="str">'super_admin'</span>)   <span class="kw">return</span> <span class="tag">&lt;Navigate</span> <span class="attr">to</span>=<span class="str">"/admin"</span> <span class="attr">replace</span> <span class="tag">/&gt;</span>;
+  <span class="kw">if</span> (user.role === <span class="str">'it_head'</span>)       <span class="kw">return</span> <span class="tag">&lt;Navigate</span> <span class="attr">to</span>=<span class="str">"/it-head"</span> <span class="attr">replace</span> <span class="tag">/&gt;</span>;
+  <span class="kw">if</span> (user.role === <span class="str">'section_head'</span>)  <span class="kw">return</span> <span class="tag">&lt;Navigate</span> <span class="attr">to</span>=<span class="jsx">{`/section/${user.section_id}`}</span> <span class="attr">replace</span> <span class="tag">/&gt;</span>;
+  <span class="cmt">// ... other roles</span>
+}</code></pre>
+  <p>Handles the root URL <code>/</code>. Instead of showing any content itself, it looks at the user's role and sends them to their home page. A <code>super_admin</code> goes to <code>/admin</code>, a <code>section_head</code> goes to their own section page, etc.</p>
+
+  <h3>5. RequireAuth</h3>
+  <pre><code><span class="kw">function</span> <span class="fn">RequireAuth</span>({ roles }) {
+  <span class="kw">const</span> { user, loading } = <span class="fn">useAuth</span>();
+  <span class="kw">if</span> (loading) <span class="kw">return</span> <span class="kw">null</span>;
+  <span class="kw">if</span> (!user) <span class="kw">return</span> <span class="tag">&lt;Navigate</span> <span class="attr">to</span>=<span class="str">"/login"</span> <span class="attr">replace</span> <span class="tag">/&gt;</span>;
+  <span class="kw">if</span> (roles && !roles.<span class="fn">includes</span>(user.role)) <span class="kw">return</span> <span class="tag">&lt;Navigate</span> <span class="attr">to</span>=<span class="str">"/"</span> <span class="attr">replace</span> <span class="tag">/&gt;</span>;
+  <span class="kw">return</span> <span class="tag">&lt;Outlet /&gt;</span>;
+}</code></pre>
+  <p>A role guard. If the optional <code>roles</code> prop is provided and the user's role is not in that list, they're redirected home. <code>&lt;Outlet /&gt;</code> renders the matched child route. This is what makes nested routes work — more on this in Lesson 04.</p>
+
+  <h2>The Main App Component — Route Definitions</h2>
+  <pre><code><span class="kw">export default function</span> <span class="fn">App</span>() {
+  <span class="kw">return</span> (
+    <span class="tag">&lt;AuthProvider&gt;</span>                         <span class="cmt">← wraps EVERYTHING with auth state</span>
+      <span class="tag">&lt;BrowserRouter&gt;</span>                      <span class="cmt">← enables client-side routing</span>
+        <span class="tag">&lt;Routes&gt;</span>
+
+          <span class="cmt">// Public routes (no auth needed)</span>
+          <span class="tag">&lt;Route</span> <span class="attr">path</span>=<span class="str">"/login"</span>
+                 <span class="attr">element</span>=<span class="jsx">{&lt;PublicOnly&gt;&lt;LoginPage /&gt;&lt;/PublicOnly&gt;}</span> <span class="tag">/&gt;</span>
+          <span class="tag">&lt;Route</span> <span class="attr">path</span>=<span class="str">"/report/:token"</span>
+                 <span class="attr">element</span>=<span class="jsx">{&lt;PublicReport /&gt;}</span> <span class="tag">/&gt;</span>
+
+          <span class="cmt">// Change password — needs login but no role check</span>
+          <span class="tag">&lt;Route</span> <span class="attr">element</span>=<span class="jsx">{&lt;RequireAuth /&gt;}</span><span class="tag">&gt;</span>
+            <span class="tag">&lt;Route</span> <span class="attr">path</span>=<span class="str">"/change-password"</span> <span class="attr">element</span>=<span class="jsx">{&lt;ChangePasswordPage /&gt;}</span> <span class="tag">/&gt;</span>
+          <span class="tag">&lt;/Route&gt;</span>
+
+          <span class="cmt">// All dashboard routes — share one persistent Layout</span>
+          <span class="tag">&lt;Route</span> <span class="attr">element</span>=<span class="jsx">{&lt;ProtectedLayout /&gt;}</span><span class="tag">&gt;</span>
+            <span class="tag">&lt;Route</span> <span class="attr">element</span>=<span class="jsx">{&lt;RequireAuth roles={['super_admin']} /&gt;}</span><span class="tag">&gt;</span>
+              <span class="tag">&lt;Route</span> <span class="attr">path</span>=<span class="str">"/admin/*"</span> <span class="attr">element</span>=<span class="jsx">{&lt;AdminDashboard /&gt;}</span> <span class="tag">/&gt;</span>
+            <span class="tag">&lt;/Route&gt;</span>
+            <span class="cmt">// ... more role-gated routes</span>
+          <span class="tag">&lt;/Route&gt;</span>
+
+          <span class="cmt">// Root URL — redirect based on role</span>
+          <span class="tag">&lt;Route</span> <span class="attr">path</span>=<span class="str">"/"</span> <span class="attr">element</span>=<span class="jsx">{&lt;RoleRedirect /&gt;}</span> <span class="tag">/&gt;</span>
+          <span class="cmt">// Any unknown URL — redirect to home</span>
+          <span class="tag">&lt;Route</span> <span class="attr">path</span>=<span class="str">"*"</span> <span class="attr">element</span>=<span class="jsx">{&lt;Navigate to="/" replace /&gt;}</span> <span class="tag">/&gt;</span>
+
+        <span class="tag">&lt;/Routes&gt;</span>
+      <span class="tag">&lt;/BrowserRouter&gt;</span>
+    <span class="tag">&lt;/AuthProvider&gt;</span>
+  );
+}</code></pre>
+
+  <h2>Why is AuthProvider the Outermost Wrapper?</h2>
+  <p>The nesting order matters. <code>AuthProvider</code> wraps <code>BrowserRouter</code> which wraps everything else. This means every component inside — including the router and all route components — can call <code>useAuth()</code> to get the current user. If you put <code>AuthProvider</code> inside <code>BrowserRouter</code>, route guards like <code>RequireAuth</code> (which use <code>useAuth</code>) would still work, but the login redirect in the 401 interceptor (in <code>api/client.js</code>) needs access to <code>window.location</code>, not the router — so placement doesn't matter for that.</p>
+
+  <div class="callout tip"><div class="callout-icon"></div><p>Think of providers as <strong>context bubbles</strong>. Everything nested inside a Provider can access that Provider's data. The deeper you put a Provider, the fewer components can reach it. <code>AuthProvider</code> is the outermost because literally everything in the app might need to know who is logged in.</p></div>
+
+  <div class="page-nav">
+    <a href="02-how-react-works.html">← How React Works</a>
+    <a href="04-routing.html">Next: Routing →</a>
+  </div>
+</main>
+</body>
+</html>

@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Lesson 05 — State &amp; Hooks</title>
+<link rel="stylesheet" href="_shared.css">
+</head>
+<body>
+
+<nav>
+  <div class="logo"><a href="index.html">Frontend Learning Hub</a><span>IT Project Management</span></div>
+  <div class="section-label">Foundations</div>
+  <a href="01-architecture.html"><span class="num">01</span> Architecture</a>
+  <a href="02-how-react-works.html"><span class="num">02</span> How React Works</a>
+  <a href="03-entry-point.html"><span class="num">03</span> Entry Point</a>
+  <div class="section-label">Core Concepts</div>
+  <a href="04-routing.html"><span class="num">04</span> Routing</a>
+  <a href="05-state-and-hooks.html" class="active"><span class="num">05</span> State &amp; Hooks</a>
+  <a href="06-context.html"><span class="num">06</span> Context API</a>
+  <div class="section-label">The App's Layers</div>
+  <a href="07-components.html"><span class="num">07</span> Components</a>
+  <a href="08-api-layer.html"><span class="num">08</span> API Layer</a>
+  <a href="09-tailwind.html"><span class="num">09</span> Tailwind CSS</a>
+  <div class="section-label">Putting It Together</div>
+  <a href="10-auth-flow.html"><span class="num">10</span> Auth Flow</a>
+  <a href="11-complete-walkthrough.html"><span class="num">11</span> Walkthrough</a>
+</nav>
+
+<main>
+  <h1>🪝 State &amp; Hooks</h1>
+  <p class="subtitle">Hooks are functions that let you use React features inside functional components. This lesson covers the four hooks used throughout this project: useState, useEffect, useRef, and useCallback.</p>
+
+  <h2>What Are Hooks?</h2>
+  <p>Before hooks (React 16.8, 2019), you could only use React features like state in "class components" — a verbose, complex JavaScript class syntax. Hooks let you use these same features in simple functions. Today, no one writes class components for new code.</p>
+  <p>All hook names start with <code>use</code>. React provides built-in hooks, and you can also write your own "custom hooks" (like <code>useAuth</code> and <code>useSections</code> in this project).</p>
+
+  <div class="callout warn"><div class="callout-icon"></div><p><strong>Rules of Hooks</strong> — you MUST follow these or React will break:<br>1. Only call hooks at the <strong>top level</strong> of a component (not inside if/else, loops, or nested functions).<br>2. Only call hooks from <strong>React function components</strong> (or other custom hooks).<br>ESLint will warn you if you break either rule.</p></div>
+
+  <h2>useState — Local Component State</h2>
+  <p>You've already seen <code>useState</code> in Lesson 02. Here's a deeper look at how it's used across this project.</p>
+
+  <h3>Basic pattern</h3>
+  <pre><code><span class="kw">const</span> [value, setValue] = <span class="fn">useState</span>(initialValue);</code></pre>
+  <ul>
+    <li><code>value</code> — the current state value</li>
+    <li><code>setValue</code> — the function to update it (triggers a re-render)</li>
+    <li><code>initialValue</code> — what the state is on first render</li>
+  </ul>
+
+  <h3>State shapes used in PurchasesPage</h3>
+  <pre><code><span class="cmt">// Primitives</span>
+<span class="kw">const</span> [loading, setLoading]           = <span class="fn">useState</span>(<span class="kw">true</span>);
+<span class="kw">const</span> [showArchived, setShowArchived] = <span class="fn">useState</span>(<span class="kw">false</span>);
+<span class="kw">const</span> [searchTerm, setSearchTerm]     = <span class="fn">useState</span>(<span class="str">''</span>);
+<span class="kw">const</span> [editingId, setEditingId]       = <span class="fn">useState</span>(<span class="kw">null</span>);
+
+<span class="cmt">// Array of objects (the actual data)</span>
+<span class="kw">const</span> [list, setList]         = <span class="fn">useState</span>([]);
+
+<span class="cmt">// Object (form data for the row being edited)</span>
+<span class="kw">const</span> [editRow, setEditRow]   = <span class="fn">useState</span>({});</code></pre>
+
+  <h3>Updating object state</h3>
+  <p>When state is an object, you must spread the old values and override only what changed. You cannot partially update state — each call to the setter replaces the whole thing:</p>
+  <pre><code><span class="cmt">// ❌ WRONG — this replaces the whole editRow with just { status: 'done' }</span>
+setEditRow({ status: <span class="str">'done'</span> });
+
+<span class="cmt">// ✅ CORRECT — spread old values, override status</span>
+setEditRow(prev => ({ ...prev, status: <span class="str">'done'</span> }));</code></pre>
+
+  <p>The functional update form <code>prev => ({ ...prev, ... })</code> is used when the new value depends on the old value. It guarantees you're working with the most recent state, even if multiple updates are batched.</p>
+
+  <h2>useEffect — Side Effects</h2>
+  <p>A "side effect" is anything that reaches outside the component's render logic: fetching data from an API, setting up a timer, adding event listeners, etc. <code>useEffect</code> is where you put this code so it runs at the right time.</p>
+
+  <pre><code><span class="kw">useEffect</span>(() => {
+  <span class="cmt">// effect body — runs after render</span>
+  <span class="kw">return</span> () => {
+    <span class="cmt">// optional cleanup — runs before the next effect or when component unmounts</span>
+  };
+}, [<span class="cmt">/* dependency array */</span>]);</code></pre>
+
+  <h3>The dependency array — the most important concept in useEffect</h3>
+  <p>The second argument to <code>useEffect</code> is an array that controls <em>when</em> the effect runs:</p>
+
+  <table>
+    <tr><th>Dependency array</th><th>When the effect runs</th></tr>
+    <tr><td>No array (omitted)</td><td>After EVERY render — almost never what you want</td></tr>
+    <tr><td><code>[]</code> empty array</td><td>Once — only after the first render (component mounts)</td></tr>
+    <tr><td><code>[value]</code> with values</td><td>After the first render, and again whenever <code>value</code> changes</td></tr>
+  </table>
+
+  <h3>Example 1: fetch on mount (empty array)</h3>
+  <pre><code><span class="cmt">// AuthContext.jsx — run auth.me() once when the provider first mounts</span>
+<span class="fn">useEffect</span>(() => {
+  <span class="kw">if</span> (checked.current) <span class="kw">return</span>;  <span class="cmt">// guard against StrictMode double-fire</span>
+  checked.current = <span class="kw">true</span>;
+
+  auth.<span class="fn">me</span>()
+    .then(r => <span class="fn">setUser</span>(r.data))
+    .catch(() => <span class="fn">setUser</span>(<span class="kw">null</span>))
+    .finally(() => <span class="fn">setLoading</span>(<span class="kw">false</span>));
+}, []);  <span class="cmt">← empty array = runs once on mount only</span></code></pre>
+
+  <h3>Example 2: re-fetch when a value changes</h3>
+  <pre><code><span class="cmt">// PurchasesPage.jsx — re-fetch when showArchived toggle changes</span>
+<span class="kw">const</span> <span class="fn">fetchAll</span> = <span class="fn">useCallback</span>(<span class="kw">async</span> () => {
+  <span class="kw">const</span> r = <span class="kw">await</span> purchasesApi.<span class="fn">list</span>(showArchived ? { archived: <span class="num">1</span> } : {});
+  <span class="fn">setList</span>(r.data);
+}, [showArchived]);
+
+<span class="fn">useEffect</span>(() => { <span class="fn">fetchAll</span>(); }, [fetchAll]);
+<span class="cmt">// fetchAll changes whenever showArchived changes (via useCallback)</span>
+<span class="cmt">// → this effect re-runs → API is called with the new filter</span></code></pre>
+
+  <h3>Example 3: effect with cleanup (event listener)</h3>
+  <pre><code><span class="cmt">// Modal.jsx — add Escape key listener when modal opens, remove it when it closes</span>
+<span class="fn">useEffect</span>(() => {
+  <span class="kw">if</span> (!open) <span class="kw">return</span>;                          <span class="cmt">← skip if modal is closed</span>
+  <span class="kw">const</span> <span class="fn">handler</span> = (e) => {
+    <span class="kw">if</span> (e.key === <span class="str">'Escape'</span>) <span class="fn">onClose</span>();
+  };
+  document.<span class="fn">addEventListener</span>(<span class="str">'keydown'</span>, handler);
+  <span class="kw">return</span> () => document.<span class="fn">removeEventListener</span>(<span class="str">'keydown'</span>, handler);  <span class="cmt">← cleanup!</span>
+}, [open, onClose]);  <span class="cmt">← re-run when open or onClose changes</span></code></pre>
+  <p>The cleanup function is critical here. Without it, every time the modal opens, a new event listener is added. Eventually you'd have dozens of listeners all trying to close the modal. The cleanup removes the old listener before the next effect runs (or when the component unmounts).</p>
+
+  <div class="callout warn"><div class="callout-icon"></div><p>Every value from the component scope that you use inside a <code>useEffect</code> should be listed in the dependency array. ESLint's <code>react-hooks/exhaustive-deps</code> rule enforces this. Forgetting a dependency leads to "stale closure" bugs where the effect uses an old value.</p></div>
+
+  <h2>useRef — A Value That Survives Re-renders Without Causing Them</h2>
+  <p>A ref is like a box you can put a value in. The value persists across renders (like state), but changing it does <strong>NOT</strong> cause a re-render (unlike state). It's used for:</p>
+  <ul>
+    <li>Tracking something across renders that doesn't affect the UI</li>
+    <li>Holding a reference to a DOM element</li>
+  </ul>
+
+  <pre><code><span class="kw">const</span> myRef = <span class="fn">useRef</span>(initialValue);
+<span class="cmt">// Read the current value:</span>
+myRef.current  <span class="cmt">← always the latest value</span>
+<span class="cmt">// Write to it (does NOT trigger a re-render):</span>
+myRef.current = newValue;</code></pre>
+
+  <h3>The StrictMode deduplication in AuthContext</h3>
+  <p>This is a real example of why <code>useRef</code> is needed:</p>
+  <pre><code><span class="cmt">// context/AuthContext.jsx</span>
+<span class="kw">const</span> checked = <span class="fn">useRef</span>(<span class="kw">false</span>);
+
+<span class="fn">useEffect</span>(() => {
+  <span class="cmt">// React StrictMode in dev fires useEffect TWICE on mount</span>
+  <span class="cmt">// This guard ensures auth.me() is only called ONCE</span>
+  <span class="kw">if</span> (checked.current) <span class="kw">return</span>;
+  checked.current = <span class="kw">true</span>;
+
+  auth.<span class="fn">me</span>().then(r => <span class="fn">setUser</span>(r.data))...
+}, []);</code></pre>
+
+  <p>Why use a <code>ref</code> instead of state here? Because we don't want a re-render when we set <code>checked = true</code>. We just need a flag that persists between the two StrictMode calls. A state variable would cause a re-render.</p>
+
+  <h2>useCallback — A Stable Function Reference</h2>
+  <p><code>useCallback</code> returns a memoized version of a function — the same function object is returned on every render, unless one of its dependencies changes. This matters because functions in JavaScript are recreated on every render.</p>
+
+  <p>Why does this matter? Look at PurchasesPage:</p>
+  <pre><code><span class="cmt">// Without useCallback — new function object every render</span>
+<span class="kw">const</span> <span class="fn">fetchAll</span> = <span class="kw">async</span> () => {
+  <span class="kw">const</span> r = <span class="kw">await</span> purchasesApi.<span class="fn">list</span>(...);
+  <span class="fn">setList</span>(r.data);
+};
+<span class="fn">useEffect</span>(() => { <span class="fn">fetchAll</span>(); }, [fetchAll]);
+<span class="cmt">// Problem: fetchAll is a new function on every render</span>
+<span class="cmt">// → useEffect dependency changes every render → infinite loop!</span></code></pre>
+
+  <pre><code><span class="cmt">// With useCallback — stable function reference</span>
+<span class="kw">const</span> <span class="fn">fetchAll</span> = <span class="fn">useCallback</span>(<span class="kw">async</span> () => {
+  <span class="kw">const</span> r = <span class="kw">await</span> purchasesApi.<span class="fn">list</span>(showArchived ? { archived: <span class="num">1</span> } : {});
+  <span class="fn">setList</span>(r.data);
+}, [showArchived]);  <span class="cmt">← only recreate when showArchived changes</span>
+
+<span class="fn">useEffect</span>(() => { <span class="fn">fetchAll</span>(); }, [fetchAll]);
+<span class="cmt">// Now: fetchAll only changes when showArchived changes</span>
+<span class="cmt">// → useEffect only re-runs when showArchived changes → correct!</span></code></pre>
+
+  <div class="callout tip"><div class="callout-icon"></div><p><code>useCallback(fn, deps)</code> is the same as <code>useMemo(() => fn, deps)</code>. They both memoize values — <code>useMemo</code> for any value, <code>useCallback</code> as a shortcut for memoizing functions. Don't use either blindly — they add overhead. Use them when a function is a dependency in a <code>useEffect</code>, or when passing stable callbacks to heavily optimized child components.</p></div>
+
+  <h2>Custom Hooks — useAuth and useSections</h2>
+  <p>A custom hook is just a function that starts with "use" and calls other hooks inside. They let you extract and reuse stateful logic.</p>
+
+  <pre><code><span class="cmt">// At the bottom of AuthContext.jsx</span>
+<span class="kw">export const</span> <span class="fn">useAuth</span> = () => <span class="fn">useContext</span>(AuthContext);
+
+<span class="cmt">// This tiny custom hook wraps useContext so components just write:</span>
+<span class="kw">const</span> { user, login, logout } = <span class="fn">useAuth</span>();
+<span class="cmt">// instead of the more verbose:</span>
+<span class="kw">const</span> { user, login, logout } = <span class="fn">useContext</span>(AuthContext);</code></pre>
+
+  <p>Similarly for sections:</p>
+  <pre><code><span class="cmt">// At the bottom of SectionsContext.jsx</span>
+<span class="kw">export const</span> <span class="fn">useSections</span> = () => <span class="fn">useContext</span>(SectionsContext);
+
+<span class="cmt">// Usage in any component</span>
+<span class="kw">const</span> { sections, refresh } = <span class="fn">useSections</span>();</code></pre>
+
+  <h2>Hooks at a Glance</h2>
+  <table>
+    <tr><th>Hook</th><th>What it does</th><th>Used in this project</th></tr>
+    <tr><td><code>useState</code></td><td>Local state that triggers re-renders</td><td>Every page and most components</td></tr>
+    <tr><td><code>useEffect</code></td><td>Run code after render (API calls, listeners)</td><td>AuthContext, PurchasesPage, Modal, etc.</td></tr>
+    <tr><td><code>useRef</code></td><td>Persistent value that doesn't cause re-renders</td><td>AuthContext (StrictMode guard)</td></tr>
+    <tr><td><code>useCallback</code></td><td>Stable function reference (prevents effect loops)</td><td>PurchasesPage, SectionsContext, all pages</td></tr>
+    <tr><td><code>useContext</code></td><td>Read from a Context Provider</td><td>useAuth, useSections everywhere</td></tr>
+    <tr><td><code>useNavigate</code></td><td>Navigate programmatically (from React Router)</td><td>LoginPage, Sidebar, most pages</td></tr>
+    <tr><td><code>useParams</code></td><td>Read URL parameters (from React Router)</td><td>SectionDashboard, PublicReport</td></tr>
+  </table>
+
+  <div class="page-nav">
+    <a href="04-routing.html">← Routing</a>
+    <a href="06-context.html">Next: Context API →</a>
+  </div>
+</main>
+</body>
+</html>

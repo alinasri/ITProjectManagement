@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Lesson 08 — API Layer</title>
+<link rel="stylesheet" href="_shared.css">
+</head>
+<body>
+
+<nav>
+  <div class="logo"><a href="index.html">Frontend Learning Hub</a><span>IT Project Management</span></div>
+  <div class="section-label">Foundations</div>
+  <a href="01-architecture.html"><span class="num">01</span> Architecture</a>
+  <a href="02-how-react-works.html"><span class="num">02</span> How React Works</a>
+  <a href="03-entry-point.html"><span class="num">03</span> Entry Point</a>
+  <div class="section-label">Core Concepts</div>
+  <a href="04-routing.html"><span class="num">04</span> Routing</a>
+  <a href="05-state-and-hooks.html"><span class="num">05</span> State &amp; Hooks</a>
+  <a href="06-context.html"><span class="num">06</span> Context API</a>
+  <div class="section-label">The App's Layers</div>
+  <a href="07-components.html"><span class="num">07</span> Components</a>
+  <a href="08-api-layer.html" class="active"><span class="num">08</span> API Layer</a>
+  <a href="09-tailwind.html"><span class="num">09</span> Tailwind CSS</a>
+  <div class="section-label">Putting It Together</div>
+  <a href="10-auth-flow.html"><span class="num">10</span> Auth Flow</a>
+  <a href="11-complete-walkthrough.html"><span class="num">11</span> Walkthrough</a>
+</nav>
+
+<main>
+  <h1>🔌 API Layer</h1>
+  <p class="subtitle">The frontend needs to talk to the backend. This project uses <strong>axios</strong> for HTTP requests, with a clean two-file structure: <code>client.js</code> for setup and <code>index.js</code> for all the API calls organized by domain.</p>
+
+  <h2>What Is axios?</h2>
+  <p>Axios is a JavaScript library for making HTTP requests — the same things a browser does when you navigate to a URL, but done programmatically in JavaScript. It's an alternative to the browser's built-in <code>fetch()</code> API with a nicer interface.</p>
+
+  <p>You give axios a URL and a method (GET, POST, PUT, etc.) and it sends the request and gives you back the response as a JavaScript object.</p>
+
+  <h2>File 1: client.js — The axios Instance</h2>
+  <pre><code><span class="cmt">// src/api/client.js</span>
+<span class="kw">import</span> axios <span class="kw">from</span> <span class="str">'axios'</span>;
+
+<span class="kw">const</span> api = axios.<span class="fn">create</span>({
+  baseURL: <span class="str">'/api'</span>,              <span class="cmt">← every request starts with /api</span>
+  withCredentials: <span class="kw">true</span>,       <span class="cmt">← send cookies with every request</span>
+});
+
+api.interceptors.response.<span class="fn">use</span>(
+  r => r,      <span class="cmt">← successful response: pass through unchanged</span>
+  err => {
+    <span class="kw">const</span> publicPaths = [<span class="str">'/login'</span>, <span class="str">'/change-password'</span>];
+    <span class="kw">const</span> onPublicPage = publicPaths.<span class="fn">some</span>(p => window.location.pathname.<span class="fn">startsWith</span>(p));
+    <span class="kw">if</span> (err.response?.status === <span class="num">401</span> && !onPublicPage) {
+      window.location.href = <span class="str">'/login'</span>;   <span class="cmt">← session expired → force logout</span>
+    }
+    <span class="kw">return</span> Promise.<span class="fn">reject</span>(err);
+  }
+);
+
+<span class="kw">export default</span> api;</code></pre>
+
+  <p>Let's unpack the three key configurations:</p>
+
+  <h3>baseURL: '/api'</h3>
+  <p>Every API call automatically gets <code>/api</code> prepended. So <code>api.get('/purchases')</code> actually sends <code>GET /api/purchases</code>. You never type <code>/api</code> in the rest of the code — it's centralized here.</p>
+  <p>Vite then proxies <code>/api/*</code> to <code>http://localhost:3000/api/*</code> (the backend). In production, a web server like Nginx does the same thing.</p>
+
+  <h3>withCredentials: true</h3>
+  <p>This tells axios to include <strong>cookies</strong> in every request. Without this, the session cookie (containing the JWT) would not be sent to the backend, and every request would appear unauthenticated.</p>
+
+  <div class="callout info"><div class="callout-icon"></div><p>The backend stores the JWT in an <strong>httpOnly cookie</strong>. This means JavaScript cannot read or modify the cookie — only the browser sends it automatically with each request. This is more secure than storing the token in localStorage (where any JavaScript on the page could steal it). But it means you MUST set <code>withCredentials: true</code> so axios sends the cookie.</p></div>
+
+  <h3>The 401 Interceptor — Automatic Session Expiry Handling</h3>
+  <p>An interceptor is a function that runs on every response before it reaches your code. The error interceptor here checks if any request got a 401 Unauthorized response:</p>
+  <ul>
+    <li><strong>If on a public page</strong> (login or change-password): do nothing — a 401 on the login page is normal (wrong password)</li>
+    <li><strong>If on any other page</strong>: the session has expired → redirect to <code>/login</code></li>
+  </ul>
+  <p>This means you never have to handle session expiry in individual components. It's handled globally here. If a user leaves their browser open overnight and the session expires, the next time they click anything that calls the API, they'll be automatically redirected to login.</p>
+
+  <h2>File 2: index.js — Organized API Functions</h2>
+  <p>All API calls are defined in one place, organized by domain. This means pages never construct URLs manually — they call named functions:</p>
+  <pre><code><span class="cmt">// src/api/index.js</span>
+<span class="kw">import</span> api <span class="kw">from</span> <span class="str">'./client'</span>;
+
+<span class="kw">export const</span> auth = {
+  login:          (data) => api.<span class="fn">post</span>(<span class="str">'/auth/login'</span>, data),
+  logout:         ()     => api.<span class="fn">post</span>(<span class="str">'/auth/logout'</span>),
+  me:             ()     => api.<span class="fn">get</span>(<span class="str">'/auth/me'</span>),
+  changePassword: (data) => api.<span class="fn">post</span>(<span class="str">'/auth/change-password'</span>, data),
+};
+
+<span class="kw">export const</span> purchases = {
+  list:       (params)        => api.<span class="fn">get</span>(<span class="str">'/purchases'</span>, { params }),
+  create:     (data)          => api.<span class="fn">post</span>(<span class="str">'/purchases'</span>, data),
+  update:     (id, data)      => api.<span class="fn">put</span>(<span class="str">`/purchases/${id}`</span>, data),
+  remove:     (id)            => api.<span class="fn">delete</span>(<span class="str">`/purchases/${id}`</span>),
+  getHistory: (id)            => api.<span class="fn">get</span>(<span class="str">`/purchases/${id}/history`</span>),
+  archive:    (id, archive)   => api.<span class="fn">patch</span>(<span class="str">`/purchases/${id}/archive`</span>, { archive }),
+};</code></pre>
+
+  <p>Notice the HTTP method names:</p>
+  <table>
+    <tr><th>axios method</th><th>HTTP verb</th><th>Use for</th></tr>
+    <tr><td><code>api.get(url)</code></td><td>GET</td><td>Fetching data</td></tr>
+    <tr><td><code>api.post(url, data)</code></td><td>POST</td><td>Creating a new record</td></tr>
+    <tr><td><code>api.put(url, data)</code></td><td>PUT</td><td>Replacing/updating a record</td></tr>
+    <tr><td><code>api.patch(url, data)</code></td><td>PATCH</td><td>Partial update (e.g. toggle archive)</td></tr>
+    <tr><td><code>api.delete(url)</code></td><td>DELETE</td><td>Deleting a record</td></tr>
+  </table>
+
+  <h2>How Pages Use the API</h2>
+  <p>Pages import only the domain objects they need, not the raw <code>axios</code> instance:</p>
+  <pre><code><span class="cmt">// PurchasesPage.jsx — imports</span>
+<span class="kw">import</span> { purchases <span class="kw">as</span> purchasesApi } <span class="kw">from</span> <span class="str">'../api'</span>;
+<span class="cmt">// renamed to "purchasesApi" to avoid naming conflict with the state variable "purchases"</span>
+
+<span class="cmt">// Then use it:</span>
+<span class="kw">const</span> <span class="fn">fetchAll</span> = <span class="fn">useCallback</span>(<span class="kw">async</span> () => {
+  <span class="kw">const</span> r = <span class="kw">await</span> purchasesApi.<span class="fn">list</span>(showArchived ? { archived: <span class="num">1</span> } : {});
+  <span class="fn">setList</span>(r.data);   <span class="cmt">← r.data is the JSON response body from the backend</span>
+}, [showArchived]);</code></pre>
+
+  <h3>What does a response look like?</h3>
+  <pre><code><span class="cmt">// axios wraps the response in an object:</span>
+r = {
+  data:    [...],   <span class="cmt">← THE ACTUAL RESPONSE BODY (what the backend sent)</span>
+  status:  200,     <span class="cmt">← HTTP status code</span>
+  headers: {...},   <span class="cmt">← response headers</span>
+  config:  {...},   <span class="cmt">← request config</span>
+}
+
+<span class="cmt">// So r.data is what you usually care about</span>
+<span class="kw">const</span> purchases = r.data;   <span class="cmt">← the array of purchase objects</span></code></pre>
+
+  <h3>Handling errors</h3>
+  <pre><code><span class="cmt">// Pattern used in LoginPage.jsx</span>
+<span class="kw">try</span> {
+  <span class="kw">const</span> user = <span class="kw">await</span> <span class="fn">login</span>(username, password);
+  <span class="fn">navigate</span>(<span class="str">'/admin'</span>);
+} <span class="kw">catch</span> (err) {
+  <span class="cmt">// err.response.data is the JSON error body from the backend</span>
+  <span class="cmt">// e.g. { error: 'Invalid credentials' }</span>
+  <span class="fn">setError</span>(err.response?.data?.error || <span class="str">'خطا در ورود به سیستم'</span>);
+}</code></pre>
+
+  <p>The <code>?.data?.error</code> chain is optional chaining — if <code>err.response</code> is undefined (network error, no internet), it gracefully falls back to the default error message instead of crashing.</p>
+
+  <h2>The query params pattern</h2>
+  <p>Several API functions accept query parameters:</p>
+  <pre><code><span class="cmt">// api/index.js</span>
+list: (params) => api.<span class="fn">get</span>(<span class="str">'/purchases'</span>, { params }),
+
+<span class="cmt">// Usage</span>
+purchasesApi.<span class="fn">list</span>({ archived: <span class="num">1</span> })
+<span class="cmt">// Sends: GET /api/purchases?archived=1</span>
+
+purchasesApi.<span class="fn">list</span>({})
+<span class="cmt">// Sends: GET /api/purchases   (no query params — empty object)</span>
+
+purchasesApi.<span class="fn">list</span>()
+<span class="cmt">// Sends: GET /api/purchases   (no params at all)</span></code></pre>
+
+  <p>Axios automatically serializes the <code>params</code> object into a URL query string. You never have to build <code>?key=value&amp;key2=value2</code> strings manually.</p>
+
+  <div class="page-nav">
+    <a href="07-components.html">← Components</a>
+    <a href="09-tailwind.html">Next: Tailwind CSS →</a>
+  </div>
+</main>
+</body>
+</html>

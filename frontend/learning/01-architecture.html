@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Lesson 01 — Architecture Overview</title>
+<link rel="stylesheet" href="_shared.css">
+</head>
+<body>
+
+<nav>
+  <div class="logo"><a href="index.html">Frontend Learning Hub</a><span>IT Project Management</span></div>
+  <div class="section-label">Foundations</div>
+  <a href="01-architecture.html" class="active"><span class="num">01</span> Architecture</a>
+  <a href="02-how-react-works.html"><span class="num">02</span> How React Works</a>
+  <a href="03-entry-point.html"><span class="num">03</span> Entry Point</a>
+  <div class="section-label">Core Concepts</div>
+  <a href="04-routing.html"><span class="num">04</span> Routing</a>
+  <a href="05-state-and-hooks.html"><span class="num">05</span> State &amp; Hooks</a>
+  <a href="06-context.html"><span class="num">06</span> Context API</a>
+  <div class="section-label">The App's Layers</div>
+  <a href="07-components.html"><span class="num">07</span> Components</a>
+  <a href="08-api-layer.html"><span class="num">08</span> API Layer</a>
+  <a href="09-tailwind.html"><span class="num">09</span> Tailwind CSS</a>
+  <div class="section-label">Putting It Together</div>
+  <a href="10-auth-flow.html"><span class="num">10</span> Auth Flow</a>
+  <a href="11-complete-walkthrough.html"><span class="num">11</span> Walkthrough</a>
+</nav>
+
+<main>
+  <h1>🏗️ Architecture Overview</h1>
+  <p class="subtitle">Before reading a single line of React code, you need a mental map of what React even <em>is</em>, what this app is built from, and how all the pieces connect to each other.</p>
+
+  <h2>What Is React?</h2>
+  <p>React is a JavaScript <strong>library for building user interfaces</strong>. It was created by Facebook in 2013. The core idea is simple: instead of manually manipulating HTML elements (like you would with jQuery), you <strong>describe what the UI should look like</strong>, and React figures out how to make the browser show it.</p>
+
+  <p>Imagine you have a counter showing the number 5. With plain JavaScript you would find the element and set its text: <code>document.getElementById('count').textContent = '6'</code>. With React, you just say "the counter is now 6" and React automatically updates every part of the page that depends on that number.</p>
+
+  <div class="callout info"><div class="callout-icon"></div><p><strong>React is declarative.</strong> You describe <em>what</em> you want ("show a list of 5 items"). Plain JavaScript is imperative — you describe <em>how</em> to do it ("find the ul, create 5 li elements, append each one..."). Declarative code is much easier to read and maintain.</p></div>
+
+  <h2>What Is a Single Page Application (SPA)?</h2>
+  <p>Traditional websites load a new HTML page every time you click a link. Click "Purchases" → the server sends back an entirely new HTML file. The browser discards everything and starts over.</p>
+
+  <p>A <strong>Single Page Application</strong> loads one HTML file once, and then JavaScript swaps out only the content that changes. When you click "Purchases" in our sidebar, no new page loads from the server. React simply re-renders the main content area to show the purchases table. The URL in the browser changes (so bookmarks and the back button still work), but there is no page reload.</p>
+
+  <table>
+    <tr><th>Traditional multi-page app</th><th>Single Page App (this project)</th></tr>
+    <tr><td>Server sends a new HTML page for every link</td><td>Server sends one HTML file, JS handles navigation</td></tr>
+    <tr><td>Full page reload on every click</td><td>Instant navigation — only content area changes</td></tr>
+    <tr><td>Browser discards all state on navigation</td><td>State (user info, open modals) survives navigation</td></tr>
+    <tr><td>Sidebar re-renders every page load</td><td>Sidebar stays mounted — no flicker</td></tr>
+  </table>
+
+  <h2>The Single HTML File</h2>
+  <p>Open <code>frontend/index.html</code>. You'll find almost nothing there:</p>
+  <pre><code><span class="tag">&lt;div</span> <span class="attr">id</span>=<span class="str">"root"</span><span class="tag">&gt;&lt;/div&gt;</span>
+<span class="tag">&lt;script</span> <span class="attr">type</span>=<span class="str">"module"</span> <span class="attr">src</span>=<span class="str">"/src/main.jsx"</span><span class="tag">&gt;&lt;/script&gt;</span></code></pre>
+  <p>That's it. An empty <code>&lt;div&gt;</code> and a script tag. React takes over that <code>&lt;div id="root"&gt;</code> and fills it with the entire application. Everything you see — the sidebar, the tables, the modals — is injected into that one div by JavaScript.</p>
+
+  <h2>The Folder Structure</h2>
+  <p>Here is every folder inside <code>frontend/src/</code> and what lives there:</p>
+
+  <pre><code>frontend/
+├── <span class="hl">index.html</span>           ← The ONE html file (just a shell)
+├── vite.config.js       ← Vite build tool configuration
+│
+└── <span class="hl">src/</span>                 ← ALL your application code
+    ├── main.jsx         ← Boots React into index.html
+    ├── App.jsx          ← Root component: routing + providers
+    ├── index.css        ← Global styles (imported by main.jsx)
+    ├── App.css          ← (minimal, most styling uses Tailwind)
+    │
+    ├── <span class="hl">pages/</span>           ← Full-screen views (one per route)
+    │   ├── LoginPage.jsx
+    │   ├── AdminDashboard.jsx
+    │   ├── ITHeadDashboard.jsx
+    │   ├── SectionDashboard.jsx
+    │   ├── PurchasesPage.jsx
+    │   ├── TendersPage.jsx
+    │   ├── ContractsPage.jsx
+    │   ├── ChangePasswordPage.jsx
+    │   └── PublicReport.jsx
+    │
+    ├── <span class="hl">components/</span>      ← Reusable UI building blocks
+    │   ├── Layout.jsx         ← Sidebar + content area shell
+    │   ├── Sidebar.jsx        ← Navigation sidebar
+    │   ├── Modal.jsx          ← Popup overlay
+    │   ├── ConfirmDialog.jsx  ← "Are you sure?" dialog
+    │   ├── StatCard.jsx       ← Summary stat box
+    │   ├── PageHeader.jsx     ← Page title + action buttons
+    │   ├── FilterBar.jsx      ← Search + status filter
+    │   ├── StatusBadge.jsx    ← Colored status label
+    │   └── ...more
+    │
+    ├── <span class="hl">context/</span>         ← Global state shared across the whole app
+    │   ├── AuthContext.jsx    ← Current user, login, logout
+    │   └── SectionsContext.jsx← List of all sections
+    │
+    ├── <span class="hl">api/</span>             ← All backend communication
+    │   ├── client.js          ← axios instance (base URL, interceptors)
+    │   └── index.js           ← Organized API functions (auth, projects, etc.)
+    │
+    ├── <span class="hl">config/</span>          ← App-wide constants
+    │   └── statusConfigs.js   ← Status labels and colors for each domain
+    │
+    └── <span class="hl">utils/</span>           ← Small helper functions
+        └── isWithinDeletionWindow.js</code></pre>
+
+  <h2>The Data Flow</h2>
+  <p>Understanding how data moves through the app is the key to understanding React. Here is the general pattern for every page in this project:</p>
+
+  <div class="diagram">User clicks something
+        │
+        ▼
+<span class="hl">Component</span> receives the event (onClick, onSubmit...)
+        │
+        ▼
+<span class="hl">API function</span> called (e.g. purchasesApi.list())
+        │  ← HTTP request sent to backend
+        ▼
+<span class="hl">Backend</span> processes request, returns JSON data
+        │
+        ▼
+<span class="hl">State updated</span> (setList(r.data))
+        │
+        ▼
+<span class="hl">React re-renders</span> the component with new data
+        │
+        ▼
+<span class="hl">User sees</span> the updated UI</div>
+
+  <h2>How the Frontend Connects to the Backend</h2>
+  <p>The frontend runs on <strong>port 5173</strong> (Vite's dev server). The backend runs on <strong>port 3000</strong> (Express). When React code calls <code>/api/purchases</code>, Vite's dev server automatically forwards it to <code>http://localhost:3000/api/purchases</code>. This is configured in <code>vite.config.js</code>:</p>
+  <pre><code><span class="cmt">// vite.config.js</span>
+server: {
+  proxy: {
+    <span class="str">'/api'</span>: <span class="str">'http://localhost:3000'</span>,
+  },
+}</code></pre>
+  <p>So from the frontend's point of view, there's just one server. Vite handles the forwarding transparently in development. In production, a reverse proxy (like Nginx) would do the same job.</p>
+
+  <h2>Pages vs Components — What's the Difference?</h2>
+  <p>This is a naming convention, not a React rule. In this project:</p>
+  <ul>
+    <li><strong>Pages</strong> (<code>src/pages/</code>) — full-screen views that map 1-to-1 with a URL. <code>/purchases</code> → <code>PurchasesPage.jsx</code></li>
+    <li><strong>Components</strong> (<code>src/components/</code>) — smaller, reusable UI pieces that pages assemble together. <code>Modal</code>, <code>StatCard</code>, <code>FilterBar</code> etc.</li>
+  </ul>
+  <div class="callout tip"><div class="callout-icon"></div><p>Technically pages and components are identical — both are React components (functions that return JSX). The folder separation is just for organization so you can find things quickly.</p></div>
+
+  <h2>The Three "Global" Systems</h2>
+  <p>Some data needs to be available to many different parts of the app at once. This project has three global systems:</p>
+
+  <table>
+    <tr><th>System</th><th>Where defined</th><th>What it provides</th></tr>
+    <tr><td>Auth context</td><td><code>context/AuthContext.jsx</code></td><td>The logged-in user object, login(), logout()</td></tr>
+    <tr><td>Sections context</td><td><code>context/SectionsContext.jsx</code></td><td>List of all sections (for sidebar + dropdowns)</td></tr>
+    <tr><td>React Router</td><td><code>App.jsx</code> (BrowserRouter)</td><td>Current URL, navigation, URL params</td></tr>
+  </table>
+
+  <p>These are all set up at the very top level in <code>App.jsx</code> so that every component in the entire app can access them. You'll learn exactly how in Lessons 04, 05, and 06.</p>
+
+  <div class="page-nav">
+    <a href="index.html">← Home</a>
+    <a href="02-how-react-works.html">Next: How React Works →</a>
+  </div>
+</main>
+</body>
+</html>

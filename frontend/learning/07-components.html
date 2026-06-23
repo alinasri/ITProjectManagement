@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Lesson 07 — Components</title>
+<link rel="stylesheet" href="_shared.css">
+</head>
+<body>
+
+<nav>
+  <div class="logo"><a href="index.html">Frontend Learning Hub</a><span>IT Project Management</span></div>
+  <div class="section-label">Foundations</div>
+  <a href="01-architecture.html"><span class="num">01</span> Architecture</a>
+  <a href="02-how-react-works.html"><span class="num">02</span> How React Works</a>
+  <a href="03-entry-point.html"><span class="num">03</span> Entry Point</a>
+  <div class="section-label">Core Concepts</div>
+  <a href="04-routing.html"><span class="num">04</span> Routing</a>
+  <a href="05-state-and-hooks.html"><span class="num">05</span> State &amp; Hooks</a>
+  <a href="06-context.html"><span class="num">06</span> Context API</a>
+  <div class="section-label">The App's Layers</div>
+  <a href="07-components.html" class="active"><span class="num">07</span> Components</a>
+  <a href="08-api-layer.html"><span class="num">08</span> API Layer</a>
+  <a href="09-tailwind.html"><span class="num">09</span> Tailwind CSS</a>
+  <div class="section-label">Putting It Together</div>
+  <a href="10-auth-flow.html"><span class="num">10</span> Auth Flow</a>
+  <a href="11-complete-walkthrough.html"><span class="num">11</span> Walkthrough</a>
+</nav>
+
+<main>
+  <h1>🧩 Components</h1>
+  <p class="subtitle">This project has a set of reusable components in <code>src/components/</code>. Each one is a small, focused building block that pages assemble together. This lesson explains each one.</p>
+
+  <h2>Layout — The Persistent Shell</h2>
+  <p><code>Layout.jsx</code> is the outer container for all authenticated pages. It renders the sidebar on the left and a main content area on the right. The current page's content goes into <code>&lt;Outlet /&gt;</code>.</p>
+  <pre><code><span class="cmt">// components/Layout.jsx</span>
+<span class="kw">export default function</span> <span class="fn">Layout</span>() {
+  <span class="kw">const</span> { sections } = <span class="fn">useSections</span>();
+
+  <span class="kw">return</span> (
+    <span class="tag">&lt;div</span> <span class="attr">className</span>=<span class="str">"flex min-h-screen bg-gray-950"</span><span class="tag">&gt;</span>
+      <span class="tag">&lt;Sidebar</span> <span class="attr">sections</span>=<span class="jsx">{sections}</span> <span class="tag">/&gt;</span>
+      <span class="tag">&lt;main</span> <span class="attr">className</span>=<span class="str">"flex-1 overflow-auto"</span><span class="tag">&gt;</span>
+        <span class="tag">&lt;div</span> <span class="attr">className</span>=<span class="str">"max-w-7xl mx-auto px-6 py-8"</span><span class="tag">&gt;</span>
+          <span class="tag">&lt;Outlet /&gt;</span>   <span class="cmt">← page content renders here</span>
+        <span class="tag">&lt;/div&gt;</span>
+      <span class="tag">&lt;/main&gt;</span>
+    <span class="tag">&lt;/div&gt;</span>
+  );
+}</code></pre>
+  <p>The key design decision: <code>Sidebar</code> is outside the Outlet. This means navigating between pages (which swaps the Outlet content) never unmounts the Sidebar. The sidebar never re-renders, never flickers.</p>
+
+  <h2>Sidebar — Role-Based Navigation</h2>
+  <p>The sidebar shows different navigation links depending on the logged-in user's role. It uses <code>useAuth()</code> to get the user and conditionally renders link groups:</p>
+  <pre><code><span class="cmt">// Simplified structure of Sidebar.jsx</span>
+<span class="kw">export default function</span> <span class="fn">Sidebar</span>({ sections }) {
+  <span class="kw">const</span> { user, logout } = <span class="fn">useAuth</span>();
+
+  <span class="kw">return</span> (
+    <span class="tag">&lt;aside&gt;</span>
+      <span class="cmt">/* Brand header */</span>
+      <span class="tag">&lt;div&gt;</span>مدیریت پروژه IT<span class="tag">&lt;/div&gt;</span>
+
+      <span class="cmt">/* Navigation — different links per role */</span>
+      <span class="tag">&lt;nav&gt;</span>
+        <span class="jsx">{user?.role === <span class="str">'super_admin'</span> && (
+          &lt;&gt;
+            &lt;SidebarLink to="/admin" label="داشبورد کلی" /&gt;
+            &lt;SidebarLink to="/purchases" label="خریدها" /&gt;
+            <span class="cmt">/* ...more links, plus dynamic section links */</span>
+            {sections.map(s => &lt;SidebarLink to={`/section/${s.id}`} label={s.name} /&gt;)}
+          &lt;/&gt;
+        )}</span>
+
+        <span class="jsx">{user?.role === <span class="str">'purchase_admin'</span> && (
+          &lt;SidebarLink to="/purchases" label="خریدها" /&gt;
+        )}</span>
+      <span class="tag">&lt;/nav&gt;</span>
+
+      <span class="cmt">/* User info + logout button */</span>
+      <span class="tag">&lt;div&gt;</span>
+        <span class="tag">&lt;p&gt;</span><span class="jsx">{user?.username}</span><span class="tag">&lt;/p&gt;</span>
+        <span class="tag">&lt;button</span> <span class="attr">onClick</span>=<span class="jsx">{handleLogout}</span><span class="tag">&gt;</span>خروج<span class="tag">&lt;/button&gt;</span>
+      <span class="tag">&lt;/div&gt;</span>
+    <span class="tag">&lt;/aside&gt;</span>
+  );
+}</code></pre>
+
+  <p>The <code>SidebarLink</code> helper (a private function in the same file) wraps <code>NavLink</code> with the active-state styling logic. It's defined at the bottom of <code>Sidebar.jsx</code> and is not exported — it's only used inside that file.</p>
+
+  <h2>Modal — Overlay Dialog</h2>
+  <p><code>Modal.jsx</code> is a reusable overlay. It handles:</p>
+  <ul>
+    <li>Showing a semi-transparent backdrop</li>
+    <li>Closing when the backdrop is clicked</li>
+    <li>Closing on Escape key (via a <code>useEffect</code> event listener)</li>
+    <li>Rendering nothing at all when <code>open={false}</code></li>
+  </ul>
+  <pre><code><span class="cmt">// Usage pattern in any page</span>
+<span class="kw">const</span> [showModal, setShowModal] = <span class="fn">useState</span>(<span class="kw">false</span>);
+
+<span class="tag">&lt;button</span> <span class="attr">onClick</span>=<span class="jsx">{() => setShowModal(true)}</span><span class="tag">&gt;</span>Open<span class="tag">&lt;/button&gt;</span>
+
+<span class="tag">&lt;Modal</span>
+  <span class="attr">open</span>=<span class="jsx">{showModal}</span>
+  <span class="attr">onClose</span>=<span class="jsx">{() => setShowModal(false)}</span>
+  <span class="attr">title</span>=<span class="str">"Add New Item"</span>
+<span class="tag">&gt;</span>
+  <span class="cmt">&lt;!-- your form or content goes here --&gt;</span>
+  <span class="tag">&lt;input</span> <span class="attr">type</span>=<span class="str">"text"</span> <span class="tag">/&gt;</span>
+<span class="tag">&lt;/Modal&gt;</span></code></pre>
+
+  <p>The <code>if (!open) return null;</code> line inside Modal.jsx is important — when the modal is closed, it returns nothing and React removes it from the DOM entirely. This means state inside the modal (like partially-filled form fields) resets when the modal closes and re-opens.</p>
+
+  <h2>ConfirmDialog — Built on Modal</h2>
+  <p>ConfirmDialog is a wrapper around Modal specifically for "Are you sure?" confirmations. It shows a title, a message, and two buttons (confirm + cancel).</p>
+  <pre><code><span class="cmt">// Usage — ask before deleting a record</span>
+<span class="tag">&lt;ConfirmDialog</span>
+  <span class="attr">open</span>=<span class="jsx">{!!deleteTarget}</span>
+  <span class="attr">title</span>=<span class="str">"حذف خرید"</span>
+  <span class="attr">message</span>=<span class="str">"آیا از حذف این مورد اطمینان دارید؟"</span>
+  <span class="attr">onConfirm</span>=<span class="jsx">{handleDelete}</span>
+  <span class="attr">onCancel</span>=<span class="jsx">{() => setDeleteTarget(null)}</span>
+  <span class="attr">loading</span>=<span class="jsx">{deleteLoading}</span>
+<span class="tag">/&gt;</span></code></pre>
+  <p>The pattern <code>open={!!deleteTarget}</code> is common: <code>deleteTarget</code> is either <code>null</code> (closed) or the ID of the record to delete (open). <code>!!</code> converts it to a boolean.</p>
+
+  <h2>StatCard — Summary Statistics</h2>
+  <p>Used on dashboard pages to display key metrics. Props: <code>label</code>, <code>value</code>, <code>icon</code>, <code>color</code>.</p>
+  <pre><code><span class="cmt">// StatCard accepts a "color" prop to pick from a preset palette</span>
+<span class="kw">const</span> colors = {
+  indigo:  <span class="str">'bg-indigo-900/30 text-indigo-400 border-indigo-800/40'</span>,
+  blue:    <span class="str">'bg-blue-900/30 text-blue-400 border-blue-800/40'</span>,
+  amber:   <span class="str">'bg-amber-900/30 text-amber-400 border-amber-800/40'</span>,
+  emerald: <span class="str">'bg-emerald-900/30 text-emerald-400 border-emerald-800/40'</span>,
+};
+
+<span class="cmt">// Usage</span>
+<span class="tag">&lt;StatCard</span>
+  <span class="attr">label</span>=<span class="str">"تعداد کل خریدها"</span>
+  <span class="attr">value</span>=<span class="jsx">{list.length}</span>
+  <span class="attr">icon</span>=<span class="jsx">&lt;ShoppingCart /&gt;</span>
+  <span class="attr">color</span>=<span class="str">"indigo"</span>
+<span class="tag">/&gt;</span></code></pre>
+
+  <h2>PageHeader — Page Title Area</h2>
+  <p>A consistent header bar that appears at the top of each page. Contains the page title and an optional action button (like "Add New").</p>
+  <pre><code><span class="tag">&lt;PageHeader</span> <span class="attr">title</span>=<span class="str">"خریدها"</span><span class="tag">&gt;</span>
+  <span class="tag">&lt;button</span> <span class="attr">onClick</span>=<span class="jsx">{addRow}</span><span class="tag">&gt;</span>
+    <span class="tag">&lt;Plus</span> <span class="attr">className</span>=<span class="str">"w-4 h-4"</span> <span class="tag">/&gt;</span>  خرید جدید
+  <span class="tag">&lt;/button&gt;</span>
+<span class="tag">&lt;/PageHeader&gt;</span></code></pre>
+  <p>The button content is passed as <code>children</code>, giving the page full control over what action button appears.</p>
+
+  <h2>FilterBar — Search + Status Filters</h2>
+  <p>A search input combined with status filter buttons. The parent controls all state; FilterBar just calls the callbacks when the user interacts:</p>
+  <pre><code><span class="tag">&lt;FilterBar</span>
+  <span class="attr">searchTerm</span>=<span class="jsx">{searchTerm}</span>
+  <span class="attr">onSearchChange</span>=<span class="jsx">{setSearchTerm}</span>
+  <span class="attr">statuses</span>=<span class="jsx">{STATUS_OPTIONS}</span>
+  <span class="attr">activeStatus</span>=<span class="jsx">{statusFilter}</span>
+  <span class="attr">onStatusChange</span>=<span class="jsx">{setStatusFilter}</span>
+<span class="tag">/&gt;</span></code></pre>
+  <p>FilterBar is a "controlled component" — it owns no state. Everything is passed in as props. This is the right design for filter bars: the page component knows the data, so the page should own the filter state too.</p>
+
+  <h2>StatusBadge — Colored Status Label</h2>
+  <p>Renders a small pill/badge with a color and label corresponding to a status string. The mapping from status to color/label is defined in <code>config/statusConfigs.js</code>.</p>
+  <pre><code><span class="cmt">// config/statusConfigs.js — single source of truth for status display</span>
+<span class="kw">export const</span> PURCHASE_STATUS_CONFIG = {
+  pending:     { label: <span class="str">'در انتظار'</span>,  cls: <span class="str">'bg-amber-900/30 text-amber-400...'</span> },
+  approved:    { label: <span class="str">'تایید شده'</span>,  cls: <span class="str">'bg-emerald-900/30...'</span> },
+  rejected:    { label: <span class="str">'رد شده'</span>,    cls: <span class="str">'bg-red-900/30...'</span> },
+  delivered:   { label: <span class="str">'تحویل داده شده'</span>, cls: <span class="str">'...'</span> },
+};</code></pre>
+
+  <h2>StatusHistoryTimeline — Audit Trail Display</h2>
+  <p>Renders the history of status changes for a record (who changed it, when, from what to what). Used inside a Modal when the user clicks the "History" button on a row.</p>
+  <pre><code><span class="cmt">// PurchasesPage.jsx — open history modal</span>
+<span class="kw">const</span> [historyTarget, setHistoryTarget] = <span class="fn">useState</span>(<span class="kw">null</span>);
+<span class="kw">const</span> [historyRows, setHistoryRows]     = <span class="fn">useState</span>([]);
+
+<span class="cmt">// Fetch history when a record is selected</span>
+<span class="fn">useEffect</span>(() => {
+  <span class="kw">if</span> (!historyTarget) <span class="kw">return</span>;
+  purchasesApi.<span class="fn">getHistory</span>(historyTarget).then(r => <span class="fn">setHistoryRows</span>(r.data));
+}, [historyTarget]);
+
+<span class="cmt">// Show it in a modal</span>
+<span class="tag">&lt;Modal</span> <span class="attr">open</span>=<span class="jsx">{!!historyTarget}</span> <span class="attr">title</span>=<span class="str">"تاریخچه"</span><span class="tag">&gt;</span>
+  <span class="tag">&lt;StatusHistoryTimeline</span> <span class="attr">rows</span>=<span class="jsx">{historyRows}</span> <span class="tag">/&gt;</span>
+<span class="tag">&lt;/Modal&gt;</span></code></pre>
+
+  <h2>Other Specialized Components</h2>
+  <table>
+    <tr><th>Component</th><th>Purpose</th></tr>
+    <tr><td><code>PasswordInput</code></td><td>A text input with a show/hide password toggle button</td></tr>
+    <tr><td><code>MultiSelect</code></td><td>A custom multi-value selector (for assigning sections to a purchase)</td></tr>
+    <tr><td><code>PersianDatePicker</code></td><td>A date picker that works with the Persian (Jalali) calendar</td></tr>
+    <tr><td><code>ShareReportButton</code></td><td>Fetches and copies a public report link to the clipboard</td></tr>
+  </table>
+
+  <h2>The Pattern: Small, Focused, Prop-Driven</h2>
+  <p>Every component in this project follows the same design principles:</p>
+  <ol>
+    <li><strong>Single responsibility</strong> — Modal handles the overlay and close behavior. It doesn't know what's inside it.</li>
+    <li><strong>Props control behavior</strong> — <code>open</code>, <code>onClose</code>, <code>title</code> — the parent drives the component, not internal hidden state.</li>
+    <li><strong>No business logic</strong> — components handle display and interaction. All business logic (API calls, rules) stays in the page.</li>
+    <li><strong>Reusable</strong> — the same <code>Modal</code> is used for add forms, edit forms, history display, confirm dialogs. It doesn't care what's inside.</li>
+  </ol>
+
+  <div class="page-nav">
+    <a href="06-context.html">← Context API</a>
+    <a href="08-api-layer.html">Next: API Layer →</a>
+  </div>
+</main>
+</body>
+</html>

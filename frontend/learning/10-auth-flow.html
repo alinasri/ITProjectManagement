@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Lesson 10 — Authentication Flow</title>
+<link rel="stylesheet" href="_shared.css">
+</head>
+<body>
+
+<nav>
+  <div class="logo"><a href="index.html">Frontend Learning Hub</a><span>IT Project Management</span></div>
+  <div class="section-label">Foundations</div>
+  <a href="01-architecture.html"><span class="num">01</span> Architecture</a>
+  <a href="02-how-react-works.html"><span class="num">02</span> How React Works</a>
+  <a href="03-entry-point.html"><span class="num">03</span> Entry Point</a>
+  <div class="section-label">Core Concepts</div>
+  <a href="04-routing.html"><span class="num">04</span> Routing</a>
+  <a href="05-state-and-hooks.html"><span class="num">05</span> State &amp; Hooks</a>
+  <a href="06-context.html"><span class="num">06</span> Context API</a>
+  <div class="section-label">The App's Layers</div>
+  <a href="07-components.html"><span class="num">07</span> Components</a>
+  <a href="08-api-layer.html"><span class="num">08</span> API Layer</a>
+  <a href="09-tailwind.html"><span class="num">09</span> Tailwind CSS</a>
+  <div class="section-label">Putting It Together</div>
+  <a href="10-auth-flow.html" class="active"><span class="num">10</span> Auth Flow</a>
+  <a href="11-complete-walkthrough.html"><span class="num">11</span> Walkthrough</a>
+</nav>
+
+<main>
+  <h1>🔐 Authentication Flow</h1>
+  <p class="subtitle">Authentication in this app is a cycle: check session on load → login form → protected routes → session expiry or logout. This lesson maps every step to the specific code that handles it.</p>
+
+  <h2>The Big Picture</h2>
+  <div class="diagram">App loads in browser
+       │
+       ▼
+<span class="hl">AuthProvider mounts</span>
+  user = null, loading = true
+       │
+       ▼
+<span class="hl">useEffect fires → auth.me() call</span>
+  "Is there a valid session cookie?"
+       │
+       ├── YES: setUser(userData), setLoading(false)
+       │         → protected routes become accessible
+       │
+       └── NO:  setUser(null), setLoading(false)
+                 → ProtectedLayout redirects to /login</div>
+
+  <h2>Phase 1 — App Boot: Session Check</h2>
+  <p>The very first thing the app does when it loads is check if the user is already logged in. This happens inside <code>AuthProvider</code>:</p>
+  <pre><code><span class="cmt">// context/AuthContext.jsx</span>
+<span class="kw">export function</span> <span class="fn">AuthProvider</span>({ children }) {
+  <span class="kw">const</span> [user, setUser]       = <span class="fn">useState</span>(<span class="kw">null</span>);   <span class="cmt">← starts as null (unknown)</span>
+  <span class="kw">const</span> [loading, setLoading] = <span class="fn">useState</span>(<span class="kw">true</span>);   <span class="cmt">← starts as true (checking)</span>
+  <span class="kw">const</span> checked = <span class="fn">useRef</span>(<span class="kw">false</span>);
+
+  <span class="fn">useEffect</span>(() => {
+    <span class="kw">if</span> (checked.current) <span class="kw">return</span>;  <span class="cmt">← runs exactly once (StrictMode guard)</span>
+    checked.current = <span class="kw">true</span>;
+
+    auth.<span class="fn">me</span>()                       <span class="cmt">← GET /api/auth/me</span>
+      .then(r => <span class="fn">setUser</span>(r.data))  <span class="cmt">← 200 OK: session exists</span>
+      .catch(() => <span class="fn">setUser</span>(<span class="kw">null</span>)) <span class="cmt">← 401: no session</span>
+      .finally(() => <span class="fn">setLoading</span>(<span class="kw">false</span>));
+  }, []);
+  ...
+}</code></pre>
+
+  <p>The backend's <code>GET /api/auth/me</code> route reads the session cookie. If valid, it returns the user object (<code>{ id, username, role, section_id, ... }</code>). If not valid, it returns 401.</p>
+
+  <h3>The loading flag prevents premature redirects</h3>
+  <p>During the <code>auth.me()</code> request, <code>loading</code> is <code>true</code> and <code>user</code> is <code>null</code>. If <code>ProtectedLayout</code> only checked <code>user</code>:</p>
+  <pre><code><span class="cmt">// ❌ Without loading check — sends logged-in users to /login!</span>
+<span class="kw">if</span> (!user) <span class="kw">return</span> <span class="tag">&lt;Navigate</span> <span class="attr">to</span>=<span class="str">"/login"</span> <span class="tag">/&gt;</span>;   <span class="cmt">← fires immediately when user=null</span>
+
+<span class="cmt">// ✅ With loading check — waits for the check to finish</span>
+<span class="kw">if</span> (loading) <span class="kw">return</span> <span class="tag">&lt;FullPageSpinner /&gt;</span>;     <span class="cmt">← show spinner while checking</span>
+<span class="kw">if</span> (!user)   <span class="kw">return</span> <span class="tag">&lt;Navigate</span> <span class="attr">to</span>=<span class="str">"/login"</span> <span class="tag">/&gt;</span>; <span class="cmt">← only check after result is known</span></code></pre>
+
+  <h2>Phase 2 — The Login Flow</h2>
+  <p>When <code>loading</code> finishes and <code>user</code> is still <code>null</code>, the user is on the login page. Here's what happens when they submit the form:</p>
+
+  <div class="diagram">User types username + password, clicks "ورود"
+       │
+       ▼
+handleSubmit() called (e.preventDefault() stops page reload)
+       │
+       ▼
+setLoading(true) → button shows "در حال ورود..." and is disabled
+       │
+       ▼
+login(username, password) called (from useAuth)
+  → auth.login({ username, password })
+  → POST /api/auth/login
+       │
+       ├── 200 OK: { user: { id, role, ... } }
+       │     → setUser(r.data.user)  (in AuthContext)
+       │     → return r.data.user    (back to LoginPage)
+       │     → navigate('/admin')    (or role-specific route)
+       │
+       └── 401 Error: { error: 'Invalid credentials' }
+             → setError('Invalid credentials')
+             → setLoading(false)</div>
+
+  <h3>The login function in detail</h3>
+  <pre><code><span class="cmt">// LoginPage.jsx — the form submit handler</span>
+<span class="kw">const</span> <span class="fn">handleSubmit</span> = <span class="kw">async</span> (e) => {
+  e.<span class="fn">preventDefault</span>();
+  <span class="fn">setError</span>(<span class="str">''</span>);
+  <span class="fn">setLoading</span>(<span class="kw">true</span>);
+  <span class="kw">try</span> {
+    <span class="kw">const</span> user = <span class="kw">await</span> <span class="fn">login</span>(username, password);
+    <span class="cmt">// Check if password change is required</span>
+    <span class="kw">if</span> (user.must_change_password) <span class="kw">return</span> <span class="fn">navigate</span>(<span class="str">'/change-password'</span>);
+    <span class="cmt">// Route by role</span>
+    <span class="kw">if</span> (user.role === <span class="str">'super_admin'</span>) <span class="fn">navigate</span>(<span class="str">'/admin'</span>);
+    <span class="kw">else if</span> (user.role === <span class="str">'it_head'</span>)  <span class="fn">navigate</span>(<span class="str">'/it-head'</span>);
+    <span class="kw">else</span> <span class="fn">navigate</span>(<span class="str">`/section/${user.section_id}`</span>);
+  } <span class="kw">catch</span> (err) {
+    <span class="fn">setError</span>(err.response?.data?.error || <span class="str">'خطا در ورود به سیستم'</span>);
+  } <span class="kw">finally</span> {
+    <span class="fn">setLoading</span>(<span class="kw">false</span>);
+  }
+};</code></pre>
+
+  <h3>What the backend does with a successful login</h3>
+  <p>The backend verifies the credentials, creates a JWT, and sets it as an <strong>httpOnly cookie</strong> in the response. The browser automatically stores this cookie and sends it with every future request to the same domain. JavaScript cannot read this cookie — it's completely invisible to frontend code. This is a security feature: even if someone injects malicious JavaScript into your page, they can't steal the session token.</p>
+
+  <h2>Phase 3 — Protected Routes</h2>
+  <p>Once logged in, the user navigates within the app. Every protected page is behind the <code>ProtectedLayout</code> → <code>RequireAuth</code> guard chain:</p>
+  <pre><code><span class="cmt">// App.jsx — purchases route requires one of these roles</span>
+<span class="tag">&lt;Route</span> <span class="attr">element</span>=<span class="jsx">{&lt;ProtectedLayout /&gt;}</span><span class="tag">&gt;</span>
+  <span class="tag">&lt;Route</span> <span class="attr">element</span>=<span class="jsx">{&lt;RequireAuth roles={['super_admin', 'it_head', 'purchase_admin']} /&gt;}</span><span class="tag">&gt;</span>
+    <span class="tag">&lt;Route</span> <span class="attr">path</span>=<span class="str">"/purchases"</span> <span class="attr">element</span>=<span class="jsx">{&lt;PurchasesPage /&gt;}</span> <span class="tag">/&gt;</span>
+  <span class="tag">&lt;/Route&gt;</span>
+<span class="tag">&lt;/Route&gt;</span>
+
+<span class="cmt">// RequireAuth checks role</span>
+<span class="kw">function</span> <span class="fn">RequireAuth</span>({ roles }) {
+  <span class="kw">const</span> { user, loading } = <span class="fn">useAuth</span>();
+  <span class="kw">if</span> (loading) <span class="kw">return</span> <span class="kw">null</span>;
+  <span class="kw">if</span> (!user)   <span class="kw">return</span> <span class="tag">&lt;Navigate</span> <span class="attr">to</span>=<span class="str">"/login"</span> <span class="attr">replace</span> <span class="tag">/&gt;</span>;
+  <span class="kw">if</span> (roles && !roles.<span class="fn">includes</span>(user.role)) <span class="kw">return</span> <span class="tag">&lt;Navigate</span> <span class="attr">to</span>=<span class="str">"/"</span> <span class="attr">replace</span> <span class="tag">/&gt;</span>;
+  <span class="kw">return</span> <span class="tag">&lt;Outlet /&gt;</span>;  <span class="cmt">← render PurchasesPage</span>
+}</code></pre>
+
+  <div class="callout warn"><div class="callout-icon"></div><p><strong>Frontend auth guards are UI, not security.</strong> A clever user could bypass <code>RequireAuth</code> in the browser's dev tools. The real security is the backend — every API endpoint also checks the JWT and role. The frontend guards exist purely for user experience (showing the right page to the right user, not flashing a forbidden page).</p></div>
+
+  <h2>Phase 4 — Session Expiry (The 401 Interceptor)</h2>
+  <p>JWT tokens expire. If a user keeps a tab open for hours and the token expires, the next API call will return 401. The interceptor in <code>client.js</code> handles this:</p>
+  <pre><code><span class="cmt">// api/client.js</span>
+api.interceptors.response.<span class="fn">use</span>(
+  r => r,
+  err => {
+    <span class="kw">const</span> publicPaths = [<span class="str">'/login'</span>, <span class="str">'/change-password'</span>];
+    <span class="kw">const</span> onPublicPage = publicPaths.<span class="fn">some</span>(p => window.location.pathname.<span class="fn">startsWith</span>(p));
+    <span class="kw">if</span> (err.response?.status === <span class="num">401</span> && !onPublicPage) {
+      window.location.href = <span class="str">'/login'</span>;  <span class="cmt">← hard redirect (reloads app)</span>
+    }
+    <span class="kw">return</span> Promise.<span class="fn">reject</span>(err);
+  }
+);</code></pre>
+
+  <p>Using <code>window.location.href</code> instead of React Router's <code>navigate()</code> causes a full page reload. This is intentional — it clears all React state (including the stale <code>user</code> value) and starts fresh with a blank session.</p>
+
+  <h2>Phase 5 — Logout</h2>
+  <p>The user clicks "خروج" (logout) in the Sidebar:</p>
+  <pre><code><span class="cmt">// Sidebar.jsx</span>
+<span class="kw">const</span> <span class="fn">handleLogout</span> = <span class="kw">async</span> () => {
+  <span class="kw">await</span> <span class="fn">logout</span>();            <span class="cmt">← from useAuth()</span>
+  <span class="fn">navigate</span>(<span class="str">'/login'</span>);
+};
+
+<span class="cmt">// AuthContext.jsx — logout function</span>
+<span class="kw">const</span> logout = <span class="kw">async</span> () => {
+  <span class="kw">await</span> auth.<span class="fn">logout</span>();       <span class="cmt">← POST /api/auth/logout → backend clears cookie</span>
+  <span class="fn">setUser</span>(<span class="kw">null</span>);             <span class="cmt">← clear local state</span>
+};</code></pre>
+
+  <p>Setting <code>user</code> to <code>null</code> in AuthContext causes every component that uses <code>useAuth()</code> to re-render. <code>ProtectedLayout</code> re-renders, sees <code>user === null</code> (and <code>loading === false</code>), and renders <code>&lt;Navigate to="/login" /&gt;</code>. The user is redirected before <code>navigate('/login')</code> even runs — but having both is harmless.</p>
+
+  <h2>The must_change_password Flow</h2>
+  <p>Some users are created by the admin with a temporary password. The <code>must_change_password</code> flag in the user object triggers a mandatory password change before they can access any page:</p>
+  <pre><code><span class="cmt">// ProtectedLayout — checked on every render</span>
+<span class="kw">if</span> (user.must_change_password) <span class="kw">return</span> <span class="tag">&lt;Navigate</span> <span class="attr">to</span>=<span class="str">"/change-password"</span> <span class="attr">replace</span> <span class="tag">/&gt;</span>;
+
+<span class="cmt">// PublicOnly — also redirects away from login if must_change_password</span>
+<span class="kw">if</span> (!loading && user && !user.must_change_password) {
+  <span class="kw">return</span> <span class="tag">&lt;Navigate</span> <span class="attr">to</span>=<span class="str">"/"</span> <span class="attr">replace</span> <span class="tag">/&gt;</span>;
+}
+<span class="cmt">// If must_change_password IS set, don't redirect from login —</span>
+<span class="cmt">// they need to go to /change-password instead (handled by ProtectedLayout)</span></code></pre>
+
+  <p>After the user changes their password, <code>ChangePasswordPage</code> calls <code>setUser({ ...user, must_change_password: false })</code> (updating the context), and the next navigation takes them to their proper home page instead of the change-password page again.</p>
+
+  <div class="page-nav">
+    <a href="09-tailwind.html">← Tailwind CSS</a>
+    <a href="11-complete-walkthrough.html">Next: Complete Walkthrough →</a>
+  </div>
+</main>
+</body>
+</html>

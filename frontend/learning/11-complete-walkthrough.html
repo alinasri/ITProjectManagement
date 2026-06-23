@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Lesson 11 — Complete Walkthrough</title>
+<link rel="stylesheet" href="_shared.css">
+</head>
+<body>
+
+<nav>
+  <div class="logo"><a href="index.html">Frontend Learning Hub</a><span>IT Project Management</span></div>
+  <div class="section-label">Foundations</div>
+  <a href="01-architecture.html"><span class="num">01</span> Architecture</a>
+  <a href="02-how-react-works.html"><span class="num">02</span> How React Works</a>
+  <a href="03-entry-point.html"><span class="num">03</span> Entry Point</a>
+  <div class="section-label">Core Concepts</div>
+  <a href="04-routing.html"><span class="num">04</span> Routing</a>
+  <a href="05-state-and-hooks.html"><span class="num">05</span> State &amp; Hooks</a>
+  <a href="06-context.html"><span class="num">06</span> Context API</a>
+  <div class="section-label">The App's Layers</div>
+  <a href="07-components.html"><span class="num">07</span> Components</a>
+  <a href="08-api-layer.html"><span class="num">08</span> API Layer</a>
+  <a href="09-tailwind.html"><span class="num">09</span> Tailwind CSS</a>
+  <div class="section-label">Putting It Together</div>
+  <a href="10-auth-flow.html"><span class="num">10</span> Auth Flow</a>
+  <a href="11-complete-walkthrough.html" class="active"><span class="num">11</span> Walkthrough</a>
+</nav>
+
+<main>
+  <h1>🎯 Complete Walkthrough</h1>
+  <p class="subtitle">Two scenarios, end-to-end, no gaps. Follow every line of code from user action to UI update. This lesson ties together everything from the previous 10 lessons.</p>
+
+  <h2>Scenario A — Login and Navigate to Purchases</h2>
+  <p>A <code>purchase_admin</code> user opens the app for the first time today and logs in.</p>
+
+  <h3>Step A1: Browser Loads the App</h3>
+  <p>The browser requests <code>http://localhost:5173</code>. Vite serves <code>index.html</code>:</p>
+  <pre><code><span class="tag">&lt;div</span> <span class="attr">id</span>=<span class="str">"root"</span><span class="tag">&gt;&lt;/div&gt;</span>
+<span class="tag">&lt;script</span> <span class="attr">src</span>=<span class="str">"/src/main.jsx"</span><span class="tag">&gt;&lt;/script&gt;</span></code></pre>
+  <p>The browser downloads and runs <code>main.jsx</code>.</p>
+
+  <h3>Step A2: React Mounts</h3>
+  <pre><code><span class="cmt">// main.jsx</span>
+<span class="fn">createRoot</span>(document.<span class="fn">getElementById</span>(<span class="str">'root'</span>)).<span class="fn">render</span>(
+  <span class="tag">&lt;StrictMode&gt;</span><span class="tag">&lt;App /&gt;</span><span class="tag">&lt;/StrictMode&gt;</span>
+);</code></pre>
+  <p>React starts rendering the component tree from <code>App</code>. The render order: <code>App</code> → <code>AuthProvider</code> → <code>BrowserRouter</code> → <code>Routes</code>.</p>
+
+  <h3>Step A3: AuthProvider Initializes</h3>
+  <pre><code><span class="cmt">// AuthContext.jsx — initial state</span>
+user    = <span class="kw">null</span>    <span class="cmt">← no user yet</span>
+loading = <span class="kw">true</span>    <span class="cmt">← checking...</span></code></pre>
+  <p>The <code>useEffect</code> is scheduled to run after this first render. React continues rendering.</p>
+
+  <h3>Step A4: Route Matching</h3>
+  <p>Current URL is <code>/</code>. React Router matches the <code>path="/"</code> route, which renders <code>RoleRedirect</code>:</p>
+  <pre><code><span class="kw">function</span> <span class="fn">RoleRedirect</span>() {
+  <span class="kw">const</span> { user, loading } = <span class="fn">useAuth</span>();
+  <span class="kw">if</span> (loading) <span class="kw">return</span> <span class="tag">&lt;FullPageSpinner /&gt;</span>;  <span class="cmt">← renders spinner</span>
+  ...
+}</code></pre>
+  <p>Since <code>loading=true</code>, the spinner is rendered. The user sees a spinning circle.</p>
+
+  <h3>Step A5: Auth Check Completes</h3>
+  <p>React runs the <code>useEffect</code> in AuthProvider. It calls <code>auth.me()</code> → <code>GET /api/auth/me</code>. There is no session cookie (first visit). The backend responds 401.</p>
+  <pre><code><span class="cmt">// AuthContext.jsx</span>
+.catch(() => <span class="fn">setUser</span>(<span class="kw">null</span>))    <span class="cmt">← user stays null</span>
+.finally(() => <span class="fn">setLoading</span>(<span class="kw">false</span>))  <span class="cmt">← loading becomes false</span></code></pre>
+  <p>Calling <code>setLoading(false)</code> triggers a re-render of every component that uses <code>useAuth()</code>.</p>
+
+  <h3>Step A6: Re-render → Redirect to Login</h3>
+  <p><code>RoleRedirect</code> re-renders with the new state:</p>
+  <pre><code>user    = <span class="kw">null</span>
+loading = <span class="kw">false</span>
+<span class="cmt">// Hits this branch:</span>
+<span class="kw">if</span> (!user) <span class="kw">return</span> <span class="tag">&lt;Navigate</span> <span class="attr">to</span>=<span class="str">"/login"</span> <span class="attr">replace</span> <span class="tag">/&gt;</span>;</code></pre>
+  <p>React Router updates the URL to <code>/login</code> and renders <code>LoginPage</code> (wrapped in <code>PublicOnly</code>). <code>PublicOnly</code> also checks auth — since <code>user=null</code> and <code>loading=false</code>, it just renders <code>children</code> (the login form).</p>
+  <p><strong>The user now sees the login form.</strong></p>
+
+  <h3>Step A7: User Types and Submits</h3>
+  <p>The user types their username and password. Each keystroke calls:</p>
+  <pre><code>onChange=<span class="jsx">{e => setUsername(e.target.value)}</span>
+onChange=<span class="jsx">{e => setPassword(e.target.value)}</span></code></pre>
+  <p>State updates → re-renders → input shows the typed text.</p>
+  <p>User clicks "ورود". The form's <code>onSubmit</code> fires → <code>handleSubmit(e)</code> runs:</p>
+  <pre><code>e.<span class="fn">preventDefault</span>();   <span class="cmt">← prevent browser form submission (page reload)</span>
+<span class="fn">setLoading</span>(<span class="kw">true</span>);      <span class="cmt">← button shows "در حال ورود..."</span>
+<span class="kw">const</span> user = <span class="kw">await</span> <span class="fn">login</span>(username, password);</code></pre>
+
+  <h3>Step A8: AuthContext.login Runs</h3>
+  <pre><code><span class="cmt">// AuthContext.jsx</span>
+<span class="kw">const</span> login = <span class="kw">async</span> (username, password) => {
+  <span class="kw">const</span> r = <span class="kw">await</span> auth.<span class="fn">login</span>({ username, password });
+  <span class="cmt">// POST /api/auth/login → 200 OK</span>
+  <span class="cmt">// response: { user: { id: 7, role: 'purchase_admin', ... } }</span>
+  <span class="cmt">// backend also sets httpOnly cookie: token=eyJ...</span>
+  <span class="fn">setUser</span>(r.data.user);   <span class="cmt">← global user state updated!</span>
+  <span class="kw">return</span> r.data.user;
+};</code></pre>
+
+  <h3>Step A9: Navigate to Purchases</h3>
+  <p>Back in <code>handleSubmit</code>:</p>
+  <pre><code><span class="kw">const</span> user = <span class="kw">await</span> <span class="fn">login</span>(...);
+<span class="cmt">// user.role === 'purchase_admin'</span>
+<span class="cmt">// doesn't match super_admin or it_head, so falls through to:</span>
+<span class="fn">navigate</span>(<span class="str">`/section/${user.section_id}`</span>);
+<span class="cmt">// Wait — purchase_admin doesn't have section_id. They'd hit the else branch:</span>
+<span class="cmt">// Actually the LoginPage's simple navigation logic goes to /section/:sectionId</span>
+<span class="cmt">// for non-admin users. For purchase_admin, AuthContext login returns the user,</span>
+<span class="cmt">// and the navigate in handleSubmit sends them to their home page.</span></code></pre>
+
+  <div class="callout info"><div class="callout-icon"></div><p>After <code>setUser()</code> is called in AuthContext, all components using <code>useAuth()</code> re-render. But <code>navigate()</code> in LoginPage runs immediately and changes the URL, so the new page component renders, not the login page.</p></div>
+
+  <h3>Step A10: ProtectedLayout and Layout Mount</h3>
+  <p>URL is now <code>/purchases</code>. React Router renders the nested route tree. The outer route matches → renders <code>ProtectedLayout</code>:</p>
+  <pre><code><span class="kw">if</span> (loading) <span class="kw">return</span> <span class="tag">&lt;FullPageSpinner /&gt;</span>;     <span class="cmt">← loading=false, skip</span>
+<span class="kw">if</span> (!user)   <span class="kw">return</span> <span class="tag">&lt;Navigate</span> <span class="attr">to</span>=<span class="str">"/login"</span> <span class="tag">/&gt;</span>; <span class="cmt">← user is set, skip</span>
+<span class="kw">if</span> (user.must_change_password) <span class="kw">return</span> ...;   <span class="cmt">← false, skip</span>
+<span class="kw">return</span> (
+  <span class="tag">&lt;SectionsProvider&gt;</span>   <span class="cmt">← sections fetch starts here</span>
+    <span class="tag">&lt;Layout /&gt;</span>           <span class="cmt">← sidebar + Outlet</span>
+  <span class="tag">&lt;/SectionsProvider&gt;</span>
+);</code></pre>
+
+  <p><code>SectionsProvider</code> mounts → fetches sections → <code>setSections(data)</code> → Sidebar re-renders with section links.</p>
+  <p><code>Layout</code> renders: <code>Sidebar</code> on the left, <code>Outlet</code> on the right.</p>
+
+  <h3>Step A11: RequireAuth and PurchasesPage Mount</h3>
+  <p>The inner route's <code>RequireAuth</code> renders:</p>
+  <pre><code>roles = [<span class="str">'super_admin'</span>, <span class="str">'it_head'</span>, <span class="str">'purchase_admin'</span>]
+user.role = <span class="str">'purchase_admin'</span>
+roles.includes(<span class="str">'purchase_admin'</span>) → <span class="kw">true</span>
+<span class="kw">return</span> <span class="tag">&lt;Outlet /&gt;</span>;   <span class="cmt">← render PurchasesPage</span></code></pre>
+
+  <p><code>PurchasesPage</code> mounts. Its <code>useState</code> initializes:</p>
+  <pre><code>list       = []
+loading    = <span class="kw">true</span>
+showArchived = <span class="kw">false</span>
+searchTerm = <span class="str">''</span>
+...</code></pre>
+
+  <h3>Step A12: PurchasesPage Fetches Data</h3>
+  <pre><code><span class="cmt">// PurchasesPage.jsx</span>
+<span class="kw">const</span> fetchAll = <span class="fn">useCallback</span>(<span class="kw">async</span> () => {
+  <span class="kw">const</span> r = <span class="kw">await</span> purchasesApi.<span class="fn">list</span>({});  <span class="cmt">← GET /api/purchases</span>
+  <span class="fn">setList</span>(r.data);                         <span class="cmt">← update state with records</span>
+}, [showArchived]);                          <span class="cmt">← showArchived=false, so no filter</span>
+
+<span class="fn">useEffect</span>(() => { <span class="fn">fetchAll</span>(); }, [fetchAll]);  <span class="cmt">← fires after first render</span></code></pre>
+
+  <p>The backend responds with an array of purchase objects. <code>setList(r.data)</code> triggers a re-render. The table renders with all the purchases.</p>
+
+  <p><strong>The user now sees the Purchases page with the sidebar, the stat cards, and the table of purchases.</strong></p>
+
+  <hr style="border-color: #1e293b; margin: 48px 0;" />
+
+  <h2>Scenario B — User Edits a Purchase Record</h2>
+  <p>The <code>purchase_admin</code> clicks the edit pencil icon on a purchase row.</p>
+
+  <h3>Step B1: Click Triggers startEdit</h3>
+  <pre><code><span class="cmt">// PurchasesPage.jsx</span>
+<span class="kw">const</span> <span class="fn">startEdit</span> = (row) => {
+  <span class="fn">setEditingId</span>(row.id);   <span class="cmt">← mark this row as being edited</span>
+  <span class="fn">setEditRow</span>({
+    title: row.title,
+    status: row.status,
+    supplier: row.supplier,
+    amount: row.amount,
+    purchase_date: row.purchase_date,
+    description: row.description,
+    section_ids: row.sections?.map(s => s.id) ?? [],
+  });
+};</code></pre>
+  <p>Two state updates fire. React batches them and does one re-render. The row with <code>id === editingId</code> switches to edit mode (showing inputs instead of text).</p>
+
+  <h3>Step B2: User Modifies Fields</h3>
+  <p>The user changes the status dropdown. Each change calls:</p>
+  <pre><code><span class="attr">onChange</span>=<span class="jsx">{e => setEditRow(prev => ({ ...prev, status: e.target.value }))}</span></code></pre>
+  <p>The functional update form <code>prev => ({ ...prev, ... })</code> ensures we keep all existing fields and only change <code>status</code>. React re-renders — the dropdown shows the new value.</p>
+
+  <h3>Step B3: User Clicks Save</h3>
+  <pre><code><span class="kw">const</span> <span class="fn">saveEdit</span> = <span class="kw">async</span> (id) => {
+  <span class="kw">await</span> purchasesApi.<span class="fn">update</span>(id, { ...editRow });  <span class="cmt">← PUT /api/purchases/42</span>
+  <span class="fn">setEditingId</span>(<span class="kw">null</span>);   <span class="cmt">← exit edit mode</span>
+  <span class="fn">fetchAll</span>();           <span class="cmt">← re-fetch the whole list to show updated data</span>
+};</code></pre>
+
+  <p>The backend updates the record in the database and returns the updated purchase. <code>fetchAll()</code> re-fetches the entire list. <code>setList(r.data)</code> fires, React re-renders the table with fresh data.</p>
+
+  <p><strong>The row now shows the updated status. The UI is in sync with the database.</strong></p>
+
+  <h2>The Full Mental Model</h2>
+  <p>After reading these two scenarios, you should be able to answer these questions about any feature in this app:</p>
+
+  <table>
+    <tr><th>Question</th><th>Where to look</th></tr>
+    <tr><td>How does the app know who is logged in?</td><td><code>context/AuthContext.jsx</code> — <code>user</code> state</td></tr>
+    <tr><td>How does a page fetch its data?</td><td><code>useEffect</code> + <code>useCallback</code> in the page component</td></tr>
+    <tr><td>How does data reach the backend?</td><td><code>api/index.js</code> → <code>api/client.js</code> → axios → Vite proxy → Express</td></tr>
+    <tr><td>How does the UI update after a change?</td><td>Setter function called → React re-renders → new JSX reflects new state</td></tr>
+    <tr><td>How does navigation work?</td><td><code>useNavigate()</code> or <code>&lt;Navigate /&gt;</code> → React Router → URL changes → route match → new component</td></tr>
+    <tr><td>How does the sidebar know which links to show?</td><td><code>user.role</code> from AuthContext drives conditional rendering in Sidebar</td></tr>
+    <tr><td>How do pages share the sections list?</td><td><code>SectionsContext</code> — fetched once, shared via <code>useSections()</code></td></tr>
+    <tr><td>What happens when the session expires?</td><td>Any API call → 401 → interceptor → <code>window.location.href = '/login'</code></td></tr>
+  </table>
+
+  <div class="callout key"><div class="callout-icon"></div><p><strong>The core loop of every React feature:</strong><br>
+  1. User does something<br>
+  2. Event handler runs<br>
+  3. State changes (setState)<br>
+  4. React re-renders<br>
+  5. New JSX reflects new state<br>
+  6. User sees the updated UI<br><br>
+  Everything in this app — from login to deleting a record to filtering a table — is some variation of this loop.</p></div>
+
+  <div class="page-nav">
+    <a href="10-auth-flow.html">← Auth Flow</a>
+    <a href="index.html">← Back to Hub</a>
+  </div>
+</main>
+</body>
+</html>

@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Lesson 02 — How React Works</title>
+<link rel="stylesheet" href="_shared.css">
+</head>
+<body>
+
+<nav>
+  <div class="logo"><a href="index.html">Frontend Learning Hub</a><span>IT Project Management</span></div>
+  <div class="section-label">Foundations</div>
+  <a href="01-architecture.html"><span class="num">01</span> Architecture</a>
+  <a href="02-how-react-works.html" class="active"><span class="num">02</span> How React Works</a>
+  <a href="03-entry-point.html"><span class="num">03</span> Entry Point</a>
+  <div class="section-label">Core Concepts</div>
+  <a href="04-routing.html"><span class="num">04</span> Routing</a>
+  <a href="05-state-and-hooks.html"><span class="num">05</span> State &amp; Hooks</a>
+  <a href="06-context.html"><span class="num">06</span> Context API</a>
+  <div class="section-label">The App's Layers</div>
+  <a href="07-components.html"><span class="num">07</span> Components</a>
+  <a href="08-api-layer.html"><span class="num">08</span> API Layer</a>
+  <a href="09-tailwind.html"><span class="num">09</span> Tailwind CSS</a>
+  <div class="section-label">Putting It Together</div>
+  <a href="10-auth-flow.html"><span class="num">10</span> Auth Flow</a>
+  <a href="11-complete-walkthrough.html"><span class="num">11</span> Walkthrough</a>
+</nav>
+
+<main>
+  <h1>⚛️ How React Works</h1>
+  <p class="subtitle">Components, JSX, props, and state — these are the four pillars of everything you see in this app. This lesson explains all four with real examples from the codebase.</p>
+
+  <h2>Pillar 1 — Components</h2>
+  <p>A <strong>component</strong> is just a JavaScript function that returns some HTML-like code. That's it. Here is the simplest possible React component:</p>
+  <pre><code><span class="kw">function</span> <span class="fn">Greeting</span>() {
+  <span class="kw">return</span> <span class="tag">&lt;h1&gt;</span>Hello, world!<span class="tag">&lt;/h1&gt;</span>;
+}</code></pre>
+  <p>React collects all these functions and composes them into a tree. Your entire app is a tree of nested component function calls, with <code>App</code> at the root.</p>
+
+  <div class="diagram">App
+├── AuthProvider          ← context/AuthContext.jsx
+│   └── BrowserRouter     ← React Router
+│       ├── LoginPage     ← pages/LoginPage.jsx
+│       └── ProtectedLayout
+│           ├── Layout    ← components/Layout.jsx
+│           │   ├── Sidebar ← components/Sidebar.jsx
+│           │   └── (page content via Outlet)
+│           │       ├── PurchasesPage
+│           │       │   ├── PageHeader
+│           │       │   ├── StatCard
+│           │       │   ├── FilterBar
+│           │       │   └── Modal
+│           │       └── ... other pages
+│           └── ...
+└── ...</div>
+
+  <p>When React renders the tree, it calls each function top-to-bottom. The output of all of them is combined into the final HTML that the browser displays.</p>
+
+  <div class="callout info"><div class="callout-icon"></div><p>Component names <strong>must start with a capital letter</strong>. <code>LoginPage</code> is a React component. <code>loginPage</code> would be interpreted as a plain HTML element (which doesn't exist) and React would silently ignore it.</p></div>
+
+  <h2>Pillar 2 — JSX</h2>
+  <p>The HTML-like syntax you see inside component functions is called <strong>JSX</strong> (JavaScript XML). It looks like HTML but it's actually JavaScript. Vite transforms it into regular JavaScript before the browser sees it.</p>
+
+  <p>For example, this JSX from <code>LoginPage.jsx</code>:</p>
+  <pre><code><span class="kw">return</span> (
+  <span class="tag">&lt;div</span> <span class="attr">className</span>=<span class="str">"min-h-screen bg-gray-950"</span><span class="tag">&gt;</span>
+    <span class="tag">&lt;h1</span> <span class="attr">className</span>=<span class="str">"text-2xl font-bold text-white"</span><span class="tag">&gt;</span>
+      سامانه مدیریت پروژه
+    <span class="tag">&lt;/h1&gt;</span>
+  <span class="tag">&lt;/div&gt;</span>
+);</code></pre>
+  <p>Gets transformed by Vite into something like:</p>
+  <pre><code><span class="kw">return</span> React.createElement(<span class="str">'div'</span>, { className: <span class="str">'min-h-screen bg-gray-950'</span> },
+  React.createElement(<span class="str">'h1'</span>, { className: <span class="str">'text-2xl font-bold text-white'</span> },
+    <span class="str">'سامانه مدیریت پروژه'</span>
+  )
+);</code></pre>
+
+  <h3>Important JSX rules</h3>
+  <ul>
+    <li><strong>Use <code>className</code>, not <code>class</code></strong> — <code>class</code> is a reserved word in JavaScript, so JSX uses <code>className</code> for CSS classes.</li>
+    <li><strong>Self-closing tags must close</strong> — <code>&lt;input /&gt;</code> not <code>&lt;input&gt;</code></li>
+    <li><strong>Only one root element</strong> — a component can only return one outermost element. Wrap multiple elements in a <code>&lt;div&gt;</code> or in a Fragment (<code>&lt;&gt;...&lt;/&gt;</code>).</li>
+    <li><strong>JavaScript expressions go in curly braces</strong> — <code>{user.username}</code>, <code>{isLoading ? 'Loading...' : 'Submit'}</code></li>
+  </ul>
+
+  <h3>Curly braces — JavaScript inside JSX</h3>
+  <p>Curly braces <code>{ }</code> let you embed any JavaScript expression inside JSX. This is how dynamic content works:</p>
+  <pre><code><span class="cmt">// From Sidebar.jsx</span>
+<span class="tag">&lt;p</span> <span class="attr">className</span>=<span class="str">"text-sm text-white"</span><span class="tag">&gt;</span><span class="jsx">{user?.username}</span><span class="tag">&lt;/p&gt;</span>
+<span class="tag">&lt;p</span> <span class="attr">className</span>=<span class="str">"text-xs text-gray-500"</span><span class="tag">&gt;</span><span class="jsx">{roleLabel}</span><span class="tag">&lt;/p&gt;</span>
+
+<span class="cmt">// Show a spinner OR the content</span>
+<span class="jsx">{loading ? <span class="tag">&lt;Spinner /&gt;</span> : <span class="tag">&lt;PurchasesTable /&gt;</span>}</span>
+
+<span class="cmt">// Render a list</span>
+<span class="jsx">{sections.map(s => (
+  <span class="tag">&lt;SidebarLink</span> <span class="attr">key</span>=<span class="jsx">{s.id}</span> <span class="attr">to</span>=<span class="jsx">{`/section/${s.id}`}</span> <span class="attr">label</span>=<span class="jsx">{s.name}</span> <span class="tag">/&gt;</span>
+))}</span></code></pre>
+
+  <div class="callout tip"><div class="callout-icon"></div><p>The <code>?.</code> in <code>user?.username</code> is called optional chaining. It means "if <code>user</code> is null or undefined, return undefined instead of crashing". Since <code>user</code> starts as <code>null</code> while the app is loading, this prevents errors.</p></div>
+
+  <h2>Pillar 3 — Props</h2>
+  <p>Props (short for "properties") are how a parent component passes data <strong>down</strong> to a child component. Think of them like function arguments — the parent calls the child and passes in values.</p>
+
+  <p>Here is <code>StatCard</code> — a component that accepts props:</p>
+  <pre><code><span class="cmt">// components/StatCard.jsx</span>
+<span class="kw">export default function</span> <span class="fn">StatCard</span>({ label, value, icon, color = <span class="str">'indigo'</span> }) {
+  <span class="cmt">// label, value, icon, color are all PROPS — passed in by the parent</span>
+  <span class="kw">return</span> (
+    <span class="tag">&lt;div</span> <span class="attr">className</span>=<span class="jsx">{`rounded-2xl border p-5 ${colors[color]}`}</span><span class="tag">&gt;</span>
+      <span class="tag">&lt;p</span> <span class="attr">className</span>=<span class="str">"text-3xl font-bold text-white"</span><span class="tag">&gt;</span><span class="jsx">{value}</span><span class="tag">&lt;/p&gt;</span>
+      <span class="tag">&lt;p</span> <span class="attr">className</span>=<span class="str">"text-sm"</span><span class="tag">&gt;</span><span class="jsx">{label}</span><span class="tag">&lt;/p&gt;</span>
+    <span class="tag">&lt;/div&gt;</span>
+  );
+}</code></pre>
+
+  <p>And here is how a page <em>uses</em> StatCard and passes props to it:</p>
+  <pre><code><span class="cmt">// Parent component (a dashboard page)</span>
+<span class="tag">&lt;StatCard</span>
+  <span class="attr">label</span>=<span class="str">"تعداد خریدها"</span>
+  <span class="attr">value</span>=<span class="jsx">{purchases.length}</span>
+  <span class="attr">icon</span>=<span class="jsx">&lt;ShoppingCart /&gt;</span>
+  <span class="attr">color</span>=<span class="str">"indigo"</span>
+<span class="tag">/&gt;</span></code></pre>
+
+  <p>Props flow in <strong>one direction only: parent → child</strong>. A child component cannot change its props, and cannot send data back up to the parent through props. (For sending data up, you pass a callback function as a prop — more on that below.)</p>
+
+  <h3>The children prop — special content slot</h3>
+  <p><code>Modal</code> is a great example. It accepts a <code>children</code> prop which is whatever you put between the opening and closing tags:</p>
+  <pre><code><span class="cmt">// Usage in a page — everything between &lt;Modal&gt; and &lt;/Modal&gt; is "children"</span>
+<span class="tag">&lt;Modal</span> <span class="attr">open</span>=<span class="jsx">{showModal}</span> <span class="attr">onClose</span>=<span class="jsx">{() => setShowModal(false)}</span> <span class="attr">title</span>=<span class="str">"Add Purchase"</span><span class="tag">&gt;</span>
+  <span class="tag">&lt;form&gt;</span>
+    <span class="tag">&lt;input</span> <span class="attr">type</span>=<span class="str">"text"</span> <span class="attr">placeholder</span>=<span class="str">"Title"</span> <span class="tag">/&gt;</span>
+    <span class="tag">&lt;button&gt;</span>Save<span class="tag">&lt;/button&gt;</span>
+  <span class="tag">&lt;/form&gt;</span>
+<span class="tag">&lt;/Modal&gt;</span>
+
+<span class="cmt">// Inside Modal.jsx, the "children" prop renders that form</span>
+<span class="tag">&lt;div</span> <span class="attr">className</span>=<span class="str">"px-6 py-5"</span><span class="tag">&gt;</span><span class="jsx">{children}</span><span class="tag">&lt;/div&gt;</span></code></pre>
+
+  <h3>Callback props — sending data up</h3>
+  <p>Since props only flow downward, how does a child tell its parent something happened? The parent passes a <strong>function</strong> as a prop, and the child calls it:</p>
+  <pre><code><span class="cmt">// Parent passes a function as prop</span>
+<span class="tag">&lt;FilterBar</span>
+  <span class="attr">searchTerm</span>=<span class="jsx">{searchTerm}</span>
+  <span class="attr">onSearchChange</span>=<span class="jsx">{setSearchTerm}</span>  <span class="cmt">← function passed as prop</span>
+<span class="tag">/&gt;</span>
+
+<span class="cmt">// FilterBar.jsx calls it when the user types</span>
+<span class="tag">&lt;input</span>
+  <span class="attr">value</span>=<span class="jsx">{searchTerm}</span>
+  <span class="attr">onChange</span>=<span class="jsx">{e => onSearchChange(e.target.value)}</span>  <span class="cmt">← calls parent's function</span>
+<span class="tag">/&gt;</span></code></pre>
+
+  <p>When the user types in the search box, <code>FilterBar</code> calls <code>onSearchChange</code> with the new value. This actually runs <code>setSearchTerm</code> in the parent, updating the parent's state, which causes both the parent and FilterBar to re-render with the new search term.</p>
+
+  <h2>Pillar 4 — State</h2>
+  <p>State is data that <strong>belongs to a component and can change over time</strong>. When state changes, React automatically re-renders the component to show the updated UI. This is the entire point of React — you update state, React updates the screen.</p>
+
+  <p>State is created with the <code>useState</code> hook:</p>
+  <pre><code><span class="kw">import</span> { useState } <span class="kw">from</span> <span class="str">'react'</span>;
+
+<span class="cmt">// From LoginPage.jsx</span>
+<span class="kw">const</span> [username, setUsername] = useState(<span class="str">''</span>);
+<span class="kw">const</span> [password, setPassword] = useState(<span class="str">''</span>);
+<span class="kw">const</span> [error, setError]       = useState(<span class="str">''</span>);
+<span class="kw">const</span> [loading, setLoading]   = useState(<span class="kw">false</span>);</code></pre>
+
+  <p><code>useState('')</code> returns an array with two elements:</p>
+  <ol>
+    <li>The <strong>current value</strong> of the state (<code>username</code>)</li>
+    <li>A <strong>setter function</strong> to update it (<code>setUsername</code>)</li>
+  </ol>
+
+  <p>The argument to <code>useState()</code> is the <strong>initial value</strong>. Here <code>username</code> starts as an empty string.</p>
+
+  <h3>You MUST use the setter — never mutate directly</h3>
+  <pre><code><span class="cmt">// ❌ WRONG — React won't know the state changed, won't re-render</span>
+username = <span class="str">'ali'</span>;
+
+<span class="cmt">// ✅ CORRECT — React sees the change and re-renders</span>
+setUsername(<span class="str">'ali'</span>);</code></pre>
+
+  <h3>State causes re-renders</h3>
+  <p>Whenever you call a setter, React schedules a re-render of that component (and its children). The component function runs again, JSX is computed again, and React updates only the parts of the DOM that changed.</p>
+
+  <pre><code><span class="cmt">// From LoginPage.jsx — when user types, state updates, input re-renders</span>
+<span class="tag">&lt;input</span>
+  <span class="attr">type</span>=<span class="str">"text"</span>
+  <span class="attr">value</span>=<span class="jsx">{username}</span>               <span class="cmt">← controlled by state</span>
+  <span class="attr">onChange</span>=<span class="jsx">{e => setUsername(e.target.value)}</span>  <span class="cmt">← updates state on every keystroke</span>
+<span class="tag">/&gt;</span></code></pre>
+
+  <div class="callout key"><div class="callout-icon"></div><p>This is called a <strong>controlled input</strong>. The input's value is always driven by React state. Typing in the box calls <code>setUsername</code>, which updates state, which re-renders the input with the new value. React is always the source of truth for what's in the box.</p></div>
+
+  <h2>Re-rendering — The Mental Model</h2>
+  <p>Understanding re-rendering is the key to understanding React bugs. Here is the simplified mental model:</p>
+
+  <ol>
+    <li>State changes (you call a setter)</li>
+    <li>React calls your component function again from the top</li>
+    <li>All variables inside the function are recalculated</li>
+    <li>New JSX is returned</li>
+    <li>React compares the new JSX to the previous JSX (this is called "diffing")</li>
+    <li>Only the actual DOM elements that differ are updated</li>
+  </ol>
+
+  <div class="callout warn"><div class="callout-icon"></div><p>Because the component function runs again from top to bottom on every render, <strong>local variables (non-state) are reset every render</strong>. Only <code>useState</code>, <code>useRef</code>, and context values survive re-renders. This is why state exists — it's the only way to remember things across renders.</p></div>
+
+  <h2>Putting It Together — LoginPage.jsx</h2>
+  <p>Let's read LoginPage through the lens of what you just learned:</p>
+  <pre><code><span class="kw">export default function</span> <span class="fn">LoginPage</span>() {
+  <span class="cmt">// STATE — data that changes and drives the UI</span>
+  <span class="kw">const</span> [username, setUsername] = <span class="fn">useState</span>(<span class="str">''</span>);
+  <span class="kw">const</span> [password, setPassword] = <span class="fn">useState</span>(<span class="str">''</span>);
+  <span class="kw">const</span> [error, setError]       = <span class="fn">useState</span>(<span class="str">''</span>);
+  <span class="kw">const</span> [loading, setLoading]   = <span class="fn">useState</span>(<span class="kw">false</span>);
+
+  <span class="cmt">// HOOK — useAuth() gives us the login function from AuthContext</span>
+  <span class="kw">const</span> { login } = <span class="fn">useAuth</span>();
+  <span class="kw">const</span> navigate = <span class="fn">useNavigate</span>();
+
+  <span class="cmt">// EVENT HANDLER — called when form is submitted</span>
+  <span class="kw">const</span> <span class="fn">handleSubmit</span> = <span class="kw">async</span> (e) => {
+    e.<span class="fn">preventDefault</span>();   <span class="cmt">// stop browser from reloading the page</span>
+    <span class="fn">setError</span>(<span class="str">''</span>);          <span class="cmt">// clear previous error</span>
+    <span class="fn">setLoading</span>(<span class="kw">true</span>);      <span class="cmt">// show spinner on button</span>
+    <span class="kw">try</span> {
+      <span class="kw">const</span> user = <span class="kw">await</span> <span class="fn">login</span>(username, password);  <span class="cmt">// call API</span>
+      <span class="fn">navigate</span>(<span class="str">'/admin'</span>);   <span class="cmt">// redirect on success</span>
+    } <span class="kw">catch</span> (err) {
+      <span class="fn">setError</span>(err.response?.data?.error || <span class="str">'خطا در ورود'</span>);
+    } <span class="kw">finally</span> {
+      <span class="fn">setLoading</span>(<span class="kw">false</span>);    <span class="cmt">// always hide spinner</span>
+    }
+  };
+
+  <span class="cmt">// JSX — describes what to render based on current state</span>
+  <span class="kw">return</span> (
+    <span class="tag">&lt;form</span> <span class="attr">onSubmit</span>=<span class="jsx">{handleSubmit}</span><span class="tag">&gt;</span>
+      <span class="jsx">{error &amp;&amp; <span class="tag">&lt;div</span> <span class="attr">className</span>=<span class="str">"text-red-300"</span><span class="tag">&gt;</span>{error}<span class="tag">&lt;/div&gt;</span>}</span>
+      <span class="tag">&lt;input</span> <span class="attr">value</span>=<span class="jsx">{username}</span> <span class="attr">onChange</span>=<span class="jsx">{e => setUsername(e.target.value)}</span> <span class="tag">/&gt;</span>
+      <span class="tag">&lt;button</span> <span class="attr">disabled</span>=<span class="jsx">{loading}</span><span class="tag">&gt;</span>
+        <span class="jsx">{loading ? <span class="str">'در حال ورود...'</span> : <span class="str">'ورود'</span>}</span>
+      <span class="tag">&lt;/button&gt;</span>
+    <span class="tag">&lt;/form&gt;</span>
+  );
+}</code></pre>
+
+  <p>Notice how the JSX <em>reacts</em> to state: <code>{error && ...}</code> shows the error only when error is non-empty. <code>{loading ? '...' : 'ورود'}</code> switches the button text. <code>disabled={loading}</code> disables the button while the request is in flight. All of this happens automatically — you just update state and React handles the DOM.</p>
+
+  <div class="page-nav">
+    <a href="01-architecture.html">← Architecture</a>
+    <a href="03-entry-point.html">Next: Entry Point →</a>
+  </div>
+</main>
+</body>
+</html>

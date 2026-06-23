@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Lesson 06 — Context API</title>
+<link rel="stylesheet" href="_shared.css">
+</head>
+<body>
+
+<nav>
+  <div class="logo"><a href="index.html">Frontend Learning Hub</a><span>IT Project Management</span></div>
+  <div class="section-label">Foundations</div>
+  <a href="01-architecture.html"><span class="num">01</span> Architecture</a>
+  <a href="02-how-react-works.html"><span class="num">02</span> How React Works</a>
+  <a href="03-entry-point.html"><span class="num">03</span> Entry Point</a>
+  <div class="section-label">Core Concepts</div>
+  <a href="04-routing.html"><span class="num">04</span> Routing</a>
+  <a href="05-state-and-hooks.html"><span class="num">05</span> State &amp; Hooks</a>
+  <a href="06-context.html" class="active"><span class="num">06</span> Context API</a>
+  <div class="section-label">The App's Layers</div>
+  <a href="07-components.html"><span class="num">07</span> Components</a>
+  <a href="08-api-layer.html"><span class="num">08</span> API Layer</a>
+  <a href="09-tailwind.html"><span class="num">09</span> Tailwind CSS</a>
+  <div class="section-label">Putting It Together</div>
+  <a href="10-auth-flow.html"><span class="num">10</span> Auth Flow</a>
+  <a href="11-complete-walkthrough.html"><span class="num">11</span> Walkthrough</a>
+</nav>
+
+<main>
+  <h1>🌐 Context API</h1>
+  <p class="subtitle">Context is React's solution to sharing data across the entire component tree without passing it through every intermediate component. This project uses it for the logged-in user and the sections list.</p>
+
+  <h2>The Problem: Prop Drilling</h2>
+  <p>Imagine you need to show the current user's name in the Sidebar. The Sidebar is buried deep in the component tree:</p>
+
+  <div class="diagram">App
+└── ProtectedLayout
+    └── Layout                    ← needs to pass user down
+        ├── Sidebar               ← needs user.username
+        │   └── SidebarLink
+        └── main
+            └── PurchasesPage     ← also needs user.role
+                └── some component that also needs user...</div>
+
+  <p>Without context, you'd have to pass <code>user</code> as a prop to <code>ProtectedLayout</code>, which passes it to <code>Layout</code>, which passes it to <code>Sidebar</code>, etc. This is called <strong>prop drilling</strong>. It's painful — every intermediate component has to accept and forward the prop even if it doesn't use it.</p>
+
+  <p>Context solves this by creating a "broadcast channel". The <code>AuthProvider</code> puts the user data onto this channel, and any component anywhere in the tree can tune in with <code>useAuth()</code>.</p>
+
+  <h2>The Three Parts of Context</h2>
+
+  <h3>1. createContext — Create the channel</h3>
+  <pre><code><span class="kw">const</span> AuthContext = <span class="fn">createContext</span>(<span class="kw">null</span>);
+<span class="cmt">// null is the default value — used when a component is outside the Provider</span></code></pre>
+
+  <h3>2. Provider — Broadcast the data</h3>
+  <pre><code><span class="tag">&lt;AuthContext.Provider</span> <span class="attr">value</span>=<span class="jsx">{{ user, setUser, login, logout, loading }}</span><span class="tag">&gt;</span>
+  <span class="jsx">{children}</span>   <span class="cmt">← every component nested inside can access these values</span>
+<span class="tag">&lt;/AuthContext.Provider&gt;</span></code></pre>
+
+  <h3>3. useContext — Tune in to the channel</h3>
+  <pre><code><span class="kw">const</span> { user, loading } = <span class="fn">useContext</span>(AuthContext);
+<span class="cmt">// Shorthand via the custom hook:</span>
+<span class="kw">const</span> { user, loading } = <span class="fn">useAuth</span>();</code></pre>
+
+  <h2>AuthContext — Deep Dive</h2>
+  <p>Here is the full <code>AuthContext.jsx</code> with detailed comments:</p>
+  <pre><code><span class="cmt">// context/AuthContext.jsx</span>
+<span class="kw">import</span> { createContext, useContext, useState, useEffect, useRef } <span class="kw">from</span> <span class="str">'react'</span>;
+<span class="kw">import</span> { auth } <span class="kw">from</span> <span class="str">'../api'</span>;
+
+<span class="cmt">// Step 1: Create the context object — the "channel"</span>
+<span class="kw">const</span> AuthContext = <span class="fn">createContext</span>(<span class="kw">null</span>);
+
+<span class="cmt">// Step 2: The Provider component — holds and shares auth state</span>
+<span class="kw">export function</span> <span class="fn">AuthProvider</span>({ children }) {
+  <span class="kw">const</span> [user, setUser]       = <span class="fn">useState</span>(<span class="kw">null</span>);    <span class="cmt">← null = not logged in</span>
+  <span class="kw">const</span> [loading, setLoading] = <span class="fn">useState</span>(<span class="kw">true</span>);    <span class="cmt">← true = checking session</span>
+  <span class="kw">const</span> checked = <span class="fn">useRef</span>(<span class="kw">false</span>);
+
+  <span class="cmt">// On first mount: ask the backend "who am I?"</span>
+  <span class="fn">useEffect</span>(() => {
+    <span class="kw">if</span> (checked.current) <span class="kw">return</span>;   <span class="cmt">← StrictMode guard</span>
+    checked.current = <span class="kw">true</span>;
+
+    auth.<span class="fn">me</span>()
+      .then(r  => <span class="fn">setUser</span>(r.data))   <span class="cmt">← logged in: set user</span>
+      .catch(() => <span class="fn">setUser</span>(<span class="kw">null</span>))    <span class="cmt">← not logged in: user stays null</span>
+      .finally(() => <span class="fn">setLoading</span>(<span class="kw">false</span>));  <span class="cmt">← done either way</span>
+  }, []);
+
+  <span class="cmt">// login() — called by LoginPage on form submit</span>
+  <span class="kw">const</span> login = <span class="kw">async</span> (username, password) => {
+    <span class="kw">const</span> r = <span class="kw">await</span> auth.<span class="fn">login</span>({ username, password });
+    <span class="fn">setUser</span>(r.data.user);     <span class="cmt">← update global user state</span>
+    <span class="kw">return</span> r.data.user;       <span class="cmt">← return user so LoginPage can check role</span>
+  };
+
+  <span class="cmt">// logout() — called by Sidebar's logout button</span>
+  <span class="kw">const</span> logout = <span class="kw">async</span> () => {
+    <span class="kw">await</span> auth.<span class="fn">logout</span>();    <span class="cmt">← tell backend to clear the cookie</span>
+    <span class="fn">setUser</span>(<span class="kw">null</span>);          <span class="cmt">← clear local user state → triggers redirect to /login</span>
+  };
+
+  <span class="cmt">// Step 3: Provide the values to all children</span>
+  <span class="kw">return</span> (
+    <span class="tag">&lt;AuthContext.Provider</span> <span class="attr">value</span>=<span class="jsx">{{ user, setUser, login, logout, loading }}</span><span class="tag">&gt;</span>
+      <span class="jsx">{children}</span>
+    <span class="tag">&lt;/AuthContext.Provider&gt;</span>
+  );
+}
+
+<span class="cmt">// Custom hook — shorthand for useContext(AuthContext)</span>
+<span class="kw">export const</span> <span class="fn">useAuth</span> = () => <span class="fn">useContext</span>(AuthContext);</code></pre>
+
+  <h3>What does "loading" protect against?</h3>
+  <p>When the app first loads, <code>user</code> is <code>null</code> and <code>loading</code> is <code>true</code>. Without the loading flag, every protected route would immediately redirect to <code>/login</code> — even if the user IS logged in, just because the auth check hasn't finished yet.</p>
+
+  <p>The <code>ProtectedLayout</code> in App.jsx checks <code>loading</code> first:</p>
+  <pre><code><span class="kw">if</span> (loading) <span class="kw">return</span> <span class="tag">&lt;FullPageSpinner /&gt;</span>;   <span class="cmt">← wait for check</span>
+<span class="kw">if</span> (!user)   <span class="kw">return</span> <span class="tag">&lt;Navigate</span> <span class="attr">to</span>=<span class="str">"/login"</span> <span class="tag">/&gt;</span>; <span class="cmt">← now safe to check</span></code></pre>
+
+  <h2>SectionsContext — A Simpler Example</h2>
+  <p>SectionsContext is simpler than AuthContext — it just loads and shares the list of sections:</p>
+  <pre><code><span class="cmt">// context/SectionsContext.jsx</span>
+<span class="kw">const</span> SectionsContext = <span class="fn">createContext</span>([]);  <span class="cmt">← default: empty array</span>
+
+<span class="kw">export function</span> <span class="fn">SectionsProvider</span>({ children }) {
+  <span class="kw">const</span> [sections, setSections] = <span class="fn">useState</span>([]);
+
+  <span class="cmt">// refresh is memoized so it can be a safe useEffect dependency</span>
+  <span class="kw">const</span> refresh = <span class="fn">useCallback</span>(() => {
+    sectionsApi.<span class="fn">list</span>().then(r => <span class="fn">setSections</span>(r.data)).<span class="fn">catch</span>(() => {});
+  }, []);  <span class="cmt">← no deps: refresh never changes identity</span>
+
+  <span class="fn">useEffect</span>(() => { <span class="fn">refresh</span>(); }, [refresh]);  <span class="cmt">← fetch once on mount</span>
+
+  <span class="kw">return</span> (
+    <span class="tag">&lt;SectionsContext.Provider</span> <span class="attr">value</span>=<span class="jsx">{{ sections, refresh }}</span><span class="tag">&gt;</span>
+      <span class="jsx">{children}</span>
+    <span class="tag">&lt;/SectionsContext.Provider&gt;</span>
+  );
+}
+
+<span class="kw">export const</span> <span class="fn">useSections</span> = () => <span class="fn">useContext</span>(SectionsContext);</code></pre>
+
+  <p>The <code>refresh</code> function is exposed so that when an admin creates or deletes a section, the page can call <code>refresh()</code> to re-fetch the sections list. Without this, the sidebar would still show the old list after a section is added.</p>
+
+  <h2>Where Are Providers Placed — And Why?</h2>
+  <p>Provider placement determines which components can consume the context. Look at <code>App.jsx</code>:</p>
+
+  <div class="diagram">App()
+│
+├── <span class="hl">AuthProvider</span>           ← OUTERMOST: whole app needs auth info
+│   └── BrowserRouter
+│       └── Routes
+│           ├── /login → LoginPage (uses useAuth to check if already logged in)
+│           │
+│           └── ProtectedLayout (uses useAuth → checked BEFORE rendering)
+│               └── <span class="hl">SectionsProvider</span>  ← INNER: only logged-in users need sections
+│                   └── Layout
+│                       ├── Sidebar (uses useSections for section nav links)
+│                       └── Outlet → pages (use useSections for dropdowns)</div>
+
+  <p><code>SectionsProvider</code> is placed inside <code>ProtectedLayout</code> for two reasons:</p>
+  <ol>
+    <li>Anonymous users don't need sections — saves an unnecessary API call</li>
+    <li>The sections fetch runs only once the user is confirmed logged in</li>
+  </ol>
+
+  <h2>When Does Context Cause a Re-render?</h2>
+  <p>When the value passed to a Provider changes, every component that consumes that context re-renders. So when <code>setUser()</code> is called in AuthContext, every component using <code>useAuth()</code> re-renders. This is usually fine since auth changes are rare events.</p>
+
+  <div class="callout tip"><div class="callout-icon"></div><p>Context is not a replacement for all state. Use it for data that is truly global (user session, theme, language, shared lists). Use local <code>useState</code> for data that belongs to one component (form inputs, modal open/closed, loading flags).</p></div>
+
+  <div class="page-nav">
+    <a href="05-state-and-hooks.html">← State &amp; Hooks</a>
+    <a href="07-components.html">Next: Components →</a>
+  </div>
+</main>
+</body>
+</html>
