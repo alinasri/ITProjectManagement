@@ -11,12 +11,30 @@ const stmts = {
   update:        db.prepare("UPDATE tenders SET title = ?, status = ?, estimated_amount = ?, deadline = ?, winner = ?, description = ?, updated_at = datetime('now') WHERE id = ?"),
   setArchived:   db.prepare("UPDATE tenders SET is_archived = ?, updated_at = datetime('now') WHERE id = ?"),
   softDelete:    db.prepare('UPDATE tenders SET is_deleted = 1 WHERE id = ?'),
-  sections:      db.prepare('SELECT s.id, s.name FROM tender_sections ts JOIN sections s ON s.id = ts.section_id WHERE ts.tender_id = ? ORDER BY s.name'),
   getHistory:    db.prepare("SELECT sh.*, u.username as changed_by_username FROM status_history sh LEFT JOIN users u ON u.id = sh.changed_by WHERE sh.entity_type = 'tender' AND sh.entity_id = ? ORDER BY sh.changed_at DESC"),
 };
 
+// enrich — attaches the sections array to each plain tender row.
+// Uses one bulk IN query instead of one query per tender.
+// db.prepare() is inside this function because the IN clause length varies per call.
 function enrich(rows) {
-  return rows.map(r => ({ ...r, sections: stmts.sections.all(r.id) }));
+  if (rows.length === 0) return [];
+
+  const ids = rows.map(r => r.id);
+  const placeholders = ids.map(() => '?').join(',');
+
+  const allSections = db.prepare(
+    `SELECT ts.tender_id, s.id, s.name
+     FROM tender_sections ts JOIN sections s ON s.id = ts.section_id
+     WHERE ts.tender_id IN (${placeholders}) ORDER BY s.name`
+  ).all(...ids);
+
+  const map = new Map(ids.map(id => [id, []]));
+  for (const s of allSections) {
+    map.get(s.tender_id).push({ id: s.id, name: s.name });
+  }
+
+  return rows.map(r => ({ ...r, sections: map.get(r.id) }));
 }
 
 function findAll({ sectionId, showArchived }) {

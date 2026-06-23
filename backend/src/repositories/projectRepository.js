@@ -22,9 +22,6 @@ const stmts = {
   update:          db.prepare("UPDATE projects SET title = ?, status = ?, future_plan = ?, problems = ?, row_order = ?, progress = ?, due_date = ?, updated_at = datetime('now') WHERE id = ?"),
   setArchived:     db.prepare("UPDATE projects SET is_archived = ?, updated_at = datetime('now') WHERE id = ?"),
   softDelete:      db.prepare('UPDATE projects SET is_deleted = 1 WHERE id = ?'),
-  // These two are used by enrich() to attach related data to each project row.
-  responsibles:    db.prepare('SELECT per.id, per.name FROM project_responsibles pr JOIN personnel per ON per.id = pr.personnel_id WHERE pr.project_id = ? ORDER BY per.name'),
-  customValues:    db.prepare('SELECT cv.column_id, cv.value, cc.column_name FROM custom_values cv JOIN custom_columns cc ON cc.id = cv.column_id WHERE cv.project_id = ?'),
   // ON CONFLICT upsert: inserts a new value, or updates it if (project_id, column_id) already exists.
   upsertCustom:    db.prepare('INSERT INTO custom_values (project_id, column_id, value) VALUES (?, ?, ?) ON CONFLICT(project_id, column_id) DO UPDATE SET value = excluded.value'),
   getHistory:      db.prepare("SELECT sh.*, u.username as changed_by_username FROM status_history sh LEFT JOIN users u ON u.id = sh.changed_by WHERE sh.entity_type = 'project' AND sh.entity_id = ? ORDER BY sh.changed_at DESC"),
@@ -45,11 +42,47 @@ const stmts = {
 // enrich — takes an array of plain project rows and returns a new array where each
 // project also has `responsibles` and `custom_values` arrays attached.
 // Called after every query so all responses share a consistent, complete shape.
+//
+// Uses two bulk IN queries instead of one query per project.
+// Example: 50 projects → 3 total queries instead of 101.
+//
+// db.prepare() is called inside this function (not at module load) because the
+// IN clause needs exactly as many '?' as there are IDs — that count is only
+// known at call time. IDs come from our own prior query, never from user input.
 function enrich(projects) {
+  if (projects.length === 0) return [];
+
+  const ids = projects.map(p => p.id);
+  const placeholders = ids.map(() => '?').join(',');
+
+  // Fetch all responsibles and custom values for the entire set of projects at once.
+  const allResponsibles = db.prepare(
+    `SELECT pr.project_id, per.id, per.name
+     FROM project_responsibles pr JOIN personnel per ON per.id = pr.personnel_id
+     WHERE pr.project_id IN (${placeholders}) ORDER BY per.name`
+  ).all(...ids);
+
+  const allCustomValues = db.prepare(
+    `SELECT cv.project_id, cv.column_id, cv.value, cc.column_name
+     FROM custom_values cv JOIN custom_columns cc ON cc.id = cv.column_id
+     WHERE cv.project_id IN (${placeholders})`
+  ).all(...ids);
+
+  // Group results by project_id using a Map so each lookup below is O(1).
+  const responsiblesMap = new Map(ids.map(id => [id, []]));
+  for (const r of allResponsibles) {
+    responsiblesMap.get(r.project_id).push({ id: r.id, name: r.name });
+  }
+
+  const customValuesMap = new Map(ids.map(id => [id, []]));
+  for (const cv of allCustomValues) {
+    customValuesMap.get(cv.project_id).push({ column_id: cv.column_id, value: cv.value, column_name: cv.column_name });
+  }
+
   return projects.map(p => ({
     ...p,
-    responsibles:  stmts.responsibles.all(p.id),
-    custom_values: stmts.customValues.all(p.id),
+    responsibles:  responsiblesMap.get(p.id),
+    custom_values: customValuesMap.get(p.id),
   }));
 }
 

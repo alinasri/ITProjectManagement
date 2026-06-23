@@ -14,13 +14,30 @@ const stmts = {
   update:        db.prepare("UPDATE purchases SET title = ?, status = ?, supplier = ?, amount = ?, purchase_date = ?, description = ?, updated_at = datetime('now') WHERE id = ?"),
   setArchived:   db.prepare("UPDATE purchases SET is_archived = ?, updated_at = datetime('now') WHERE id = ?"),
   softDelete:    db.prepare('UPDATE purchases SET is_deleted = 1 WHERE id = ?'),
-  sections:      db.prepare('SELECT s.id, s.name FROM purchase_sections ps JOIN sections s ON s.id = ps.section_id WHERE ps.purchase_id = ? ORDER BY s.name'),
   getHistory:    db.prepare("SELECT sh.*, u.username as changed_by_username FROM status_history sh LEFT JOIN users u ON u.id = sh.changed_by WHERE sh.entity_type = 'purchase' AND sh.entity_id = ? ORDER BY sh.changed_at DESC"),
 };
 
 // enrich — attaches the sections array to each plain purchase row.
+// Uses one bulk IN query instead of one query per purchase.
+// db.prepare() is inside this function because the IN clause length varies per call.
 function enrich(rows) {
-  return rows.map(r => ({ ...r, sections: stmts.sections.all(r.id) }));
+  if (rows.length === 0) return [];
+
+  const ids = rows.map(r => r.id);
+  const placeholders = ids.map(() => '?').join(',');
+
+  const allSections = db.prepare(
+    `SELECT ps.purchase_id, s.id, s.name
+     FROM purchase_sections ps JOIN sections s ON s.id = ps.section_id
+     WHERE ps.purchase_id IN (${placeholders}) ORDER BY s.name`
+  ).all(...ids);
+
+  const map = new Map(ids.map(id => [id, []]));
+  for (const s of allSections) {
+    map.get(s.purchase_id).push({ id: s.id, name: s.name });
+  }
+
+  return rows.map(r => ({ ...r, sections: map.get(r.id) }));
 }
 
 function findAll({ sectionId, showArchived }) {
