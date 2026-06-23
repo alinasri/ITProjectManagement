@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { useTableEdit } from '../hooks/useTableEdit';
 import { useAuth } from '../context/AuthContext';
 import PageHeader from '../components/PageHeader';
 import StatCard from '../components/StatCard';
@@ -11,32 +12,11 @@ import StatusHistoryTimeline from '../components/StatusHistoryTimeline';
 import { contracts as contractsApi } from '../api';
 import { useSections } from '../context/SectionsContext';
 import { Plus, Trash2, PencilLine, Check, X, FileSignature, Archive, History, AlertTriangle } from 'lucide-react';
-import DateObject from 'react-date-object';
-import persian from 'react-date-object/calendars/persian';
-import gregorian from 'react-date-object/calendars/gregorian';
-
-function contractExpiryTag(c) {
-  if (!['active', 'renewed'].includes(c.status) || !c.end_date) return null;
-  const parts = c.end_date.split('/').map(Number);
-  if (parts.length !== 3) return null;
-  try {
-    const g = new DateObject({ year: parts[0], month: parts[1], day: parts[2], calendar: persian }).convert(gregorian);
-    const end = new Date(g.year, g.month.number - 1, g.day);
-    const today = new Date(); today.setHours(0, 0, 0, 0);
-    const in60 = new Date(today); in60.setDate(in60.getDate() + 60);
-    if (end < today) return 'expired';
-    if (end <= in60) return 'expiring';
-  } catch (_) {}
-  return null;
-}
-
 import { CONTRACT_STATUS_CONFIG as STATUS_CONFIG, CONTRACT_STATUS_OPTIONS as STATUS_OPTIONS } from '../config/statusConfigs';
 import { isWithinDeletionWindow } from '../utils/isWithinDeletionWindow';
-
-function StatusPill({ status }) {
-  const { label, cls } = STATUS_CONFIG[status] || STATUS_CONFIG.active;
-  return <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${cls}`}>{label}</span>;
-}
+import { contractExpiryTag } from '../utils/dateHelpers';
+import StatusBadge from '../components/StatusBadge';
+import Spinner from '../components/Spinner';
 
 export default function ContractsPage() {
   const { user } = useAuth();
@@ -49,16 +29,6 @@ export default function ContractsPage() {
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState(null);
 
-  const [editingId, setEditingId] = useState(null);
-  const [editRow, setEditRow] = useState({});
-
-  const [deleteTarget, setDeleteTarget] = useState(null);
-  const [deleteLoading, setDeleteLoading] = useState(false);
-  const [addRowLoading, setAddRowLoading] = useState(false);
-
-  const [historyTarget, setHistoryTarget] = useState(null);
-  const [historyRows, setHistoryRows] = useState([]);
-
   const fetchAll = useCallback(async () => {
     try {
       const r = await contractsApi.list(showArchived ? { archived: 1 } : {});
@@ -70,14 +40,15 @@ export default function ContractsPage() {
 
   useEffect(() => { fetchAll(); }, [fetchAll]);
 
-  useEffect(() => {
-    if (!historyTarget) return;
-    contractsApi.getHistory(historyTarget).then(r => setHistoryRows(r.data));
-  }, [historyTarget]);
-
-  const startEdit = (row) => {
-    setEditingId(row.id);
-    setEditRow({
+  const {
+    editingId, editRow, setEditRow,
+    deleteTarget, setDeleteTarget, deleteLoading,
+    addRowLoading,
+    historyTarget, setHistoryTarget, historyRows, closeHistory,
+    startEdit, cancelEdit, saveEdit, addRow, deleteRow, handleArchive,
+  } = useTableEdit({
+    api: contractsApi,
+    makeEditRow: row => ({
       title: row.title,
       status: row.status,
       counterparty: row.counterparty,
@@ -86,55 +57,13 @@ export default function ContractsPage() {
       amount: row.amount,
       description: row.description,
       section_ids: row.sections?.map(s => s.id) ?? [],
-    });
-  };
-
-  const saveEdit = async (id) => {
-    await contractsApi.update(id, { ...editRow });
-    setEditingId(null);
-    fetchAll();
-  };
-
-  const cancelEdit = () => setEditingId(null);
-
-  const addRow = async () => {
-    setAddRowLoading(true);
-    try {
-      await contractsApi.create({ title: 'قرارداد جدید' });
-      fetchAll();
-    } finally {
-      setAddRowLoading(false);
-    }
-  };
+    }),
+    fetchAll,
+  });
 
   const canDelete = isWithinDeletionWindow;
 
-  const deleteRow = async () => {
-    setDeleteLoading(true);
-    try {
-      await contractsApi.remove(deleteTarget);
-      setDeleteTarget(null);
-      fetchAll();
-    } catch (err) {
-      if (err.response?.status === 409) {
-        setDeleteTarget(null);
-        fetchAll();
-      }
-    } finally {
-      setDeleteLoading(false);
-    }
-  };
-
-  const handleArchive = async (id, archive) => {
-    await contractsApi.archive(id, archive);
-    fetchAll();
-  };
-
-  if (loading) return (
-    <div className="flex items-center justify-center h-64">
-      <div className="w-8 h-8 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin" />
-    </div>
-  );
+  if (loading) return <Spinner />;
 
   const colCount = canEdit ? 9 : 8;
 
@@ -164,7 +93,7 @@ export default function ContractsPage() {
             </button>
             {canEdit && (
               <button
-                onClick={addRow}
+                onClick={() => addRow({ title: 'قرارداد جدید' })}
                 disabled={addRowLoading}
                 className="flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-sm font-medium transition-colors"
               >
@@ -302,7 +231,7 @@ export default function ContractsPage() {
                   ) : (
                     <>
                       <td className="px-4 py-3 text-gray-200 font-medium">{c.title}</td>
-                      <td className="px-4 py-3"><StatusPill status={c.status} /></td>
+                      <td className="px-4 py-3"><StatusBadge status={c.status} /></td>
                       <td className="px-4 py-3 text-gray-300">{c.counterparty || <span className="text-gray-600">—</span>}</td>
                       <td className="px-4 py-3 text-gray-300">{c.start_date || <span className="text-gray-600">—</span>}</td>
                       <td className="px-4 py-3 text-gray-300">{c.end_date || <span className="text-gray-600">—</span>}</td>
@@ -366,7 +295,7 @@ export default function ContractsPage() {
 
       <Modal
         open={!!historyTarget}
-        onClose={() => { setHistoryTarget(null); setHistoryRows([]); }}
+        onClose={closeHistory}
         title="تاریخچه وضعیت"
         width="max-w-md"
       >

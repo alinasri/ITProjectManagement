@@ -2,6 +2,7 @@ import { BrowserRouter, Routes, Route, Navigate, Outlet } from 'react-router-dom
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { SectionsProvider } from './context/SectionsContext';
 import Layout from './components/Layout';
+import Spinner from './components/Spinner';
 import LoginPage from './pages/LoginPage';
 import AdminDashboard from './pages/AdminDashboard';
 import ITHeadDashboard from './pages/ITHeadDashboard';
@@ -13,11 +14,7 @@ import ContractsPage from './pages/ContractsPage';
 import PublicReport from './pages/PublicReport';
 
 function FullPageSpinner() {
-  return (
-    <div className="flex items-center justify-center h-screen bg-gray-950">
-      <div className="w-8 h-8 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin" />
-    </div>
-  );
+  return <Spinner className="flex items-center justify-center h-screen bg-gray-950" />;
 }
 
 // Renders login page immediately; redirects away only after auth check completes

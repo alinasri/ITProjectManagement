@@ -1,10 +1,12 @@
 import { useState, useEffect, useCallback } from 'react';
+import { useTableEdit } from '../hooks/useTableEdit';
 import { Routes, Route, NavLink, useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import PageHeader from '../components/PageHeader';
 import StatCard from '../components/StatCard';
 import StatusBadge from '../components/StatusBadge';
-import { PROJECT_STATUS_CONFIG, PROJECT_STATUS_OPTIONS, TASK_STATUS_CONFIG, TASK_STATUS_OPTIONS, PURCHASE_STATUS_CONFIG, TENDER_STATUS_CONFIG, CONTRACT_STATUS_CONFIG } from '../config/statusConfigs';
+import Spinner from '../components/Spinner';
+import { PROJECT_STATUS_CONFIG, PROJECT_STATUS_OPTIONS, TASK_STATUS_CONFIG, TASK_STATUS_OPTIONS } from '../config/statusConfigs';
 import { isWithinDeletionWindow } from '../utils/isWithinDeletionWindow';
 import Modal from '../components/Modal';
 import ConfirmDialog from '../components/ConfirmDialog';
@@ -14,49 +16,10 @@ import StatusHistoryTimeline from '../components/StatusHistoryTimeline';
 import { projects as projectsApi, personnel as personnelApi, customColumns as colsApi, ongoingTasks as ongoingTasksApi, contracts as contractsApi, purchases as purchasesApi, tenders as tendersApi } from '../api';
 import { useSections } from '../context/SectionsContext';
 import { Plus, Trash2, PencilLine, Users, FolderKanban, Columns, Check, X, ListChecks, Archive, History, Building2, FileSignature, ShoppingCart, Gavel, AlertTriangle } from 'lucide-react';
-import DateObject from 'react-date-object';
-import persian from 'react-date-object/calendars/persian';
-import persian_fa from 'react-date-object/locales/persian_fa';
-import gregorian from 'react-date-object/calendars/gregorian';
 import PersianDatePicker from '../components/PersianDatePicker';
-
-function toPersianDate(isoStr) {
-  if (!isoStr) return null;
-  return new DateObject(new Date(isoStr + 'T00:00:00')).convert(persian, persian_fa).format('D MMMM YYYY');
-}
-
-function isoToPersianPicker(isoStr) {
-  if (!isoStr) return '';
-  const d = new DateObject(new Date(isoStr + 'T00:00:00')).convert(persian);
-  return `${d.year}/${String(d.month.number).padStart(2,'0')}/${String(d.day).padStart(2,'0')}`;
-}
-
-function persianPickerToISO(persianStr) {
-  if (!persianStr) return '';
-  const [y, m, d] = persianStr.split('/').map(Number);
-  return new DateObject({ year: y, month: m, day: d, calendar: persian }).convert(gregorian).format('YYYY-MM-DD');
-}
-
-function contractExpiryTag(c) {
-  if (!['active', 'renewed'].includes(c.status) || !c.end_date) return null;
-  const parts = c.end_date.split('/').map(Number);
-  if (parts.length !== 3) return null;
-  try {
-    const g = new DateObject({ year: parts[0], month: parts[1], day: parts[2], calendar: persian }).convert(gregorian);
-    const end = new Date(g.year, g.month.number - 1, g.day);
-    const today = new Date(); today.setHours(0, 0, 0, 0);
-    const in60 = new Date(today); in60.setDate(in60.getDate() + 60);
-    if (end < today) return 'expired';
-    if (end <= in60) return 'expiring';
-  } catch (_) {}
-  return null;
-}
+import { toPersianDate, isoToPersianPicker, persianPickerToISO, contractExpiryTag } from '../utils/dateHelpers';
 
 
-function RegPill({ status, config }) {
-  const s = config[status] ?? { label: status, cls: 'bg-gray-700/60 text-gray-300' };
-  return <span className={`inline-flex px-2.5 py-0.5 rounded-full text-xs font-medium ${s.cls}`}>{s.label}</span>;
-}
 
 function ProgressBar({ value }) {
   const pct = Math.min(100, Math.max(0, value || 0));
@@ -134,20 +97,9 @@ function ProjectsTab() {
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState(null);
 
-  const [editingId, setEditingId] = useState(null);
-  const [editRow, setEditRow] = useState({});
-
-  const [deleteTarget, setDeleteTarget] = useState(null);
-  const [deleteLoading, setDeleteLoading] = useState(false);
-
   const [addColOpen, setAddColOpen] = useState(false);
   const [newColName, setNewColName] = useState('');
   const [addColLoading, setAddColLoading] = useState(false);
-
-  const [addRowLoading, setAddRowLoading] = useState(false);
-
-  const [historyTarget, setHistoryTarget] = useState(null);
-  const [historyRows, setHistoryRows] = useState([]);
 
   const fetchAll = useCallback(async () => {
     try {
@@ -168,10 +120,37 @@ function ProjectsTab() {
 
   useEffect(() => { fetchAll(); }, [fetchAll]);
 
-  useEffect(() => {
-    if (!historyTarget) return;
-    projectsApi.getHistory(historyTarget).then(r => setHistoryRows(r.data));
-  }, [historyTarget]);
+  const {
+    editingId, editRow, setEditRow,
+    deleteTarget, setDeleteTarget, deleteLoading,
+    addRowLoading,
+    historyTarget, setHistoryTarget, historyRows, closeHistory,
+    startEdit, cancelEdit, saveEdit: saveEditBase, addRow, deleteRow: deleteProject, handleArchive,
+  } = useTableEdit({
+    api: projectsApi,
+    makeEditRow: project => {
+      const cvMap = {};
+      project.custom_values?.forEach(cv => { cvMap[cv.column_id] = cv.value; });
+      return {
+        title: project.title,
+        responsible_ids: project.responsibles?.map(r => r.id) ?? [],
+        status: project.status,
+        progress: project.progress ?? 0,
+        due_date: project.due_date || '',
+        future_plan: project.future_plan,
+        problems: project.problems,
+        custom_values: cvMap,
+      };
+    },
+    fetchAll,
+  });
+
+  const saveEdit = async (projectId) => {
+    const cvArray = Object.entries(editRow.custom_values || {}).map(([column_id, value]) => ({
+      column_id: Number(column_id), value,
+    }));
+    await saveEditBase(projectId, { ...editRow, custom_values: cvArray });
+  };
 
   const stats = {
     total: projects.length,
@@ -187,68 +166,6 @@ function ProjectsTab() {
   });
 
   const today = new Date().toISOString().slice(0, 10);
-
-  const startEdit = (project) => {
-    setEditingId(project.id);
-    const cvMap = {};
-    project.custom_values?.forEach(cv => { cvMap[cv.column_id] = cv.value; });
-    setEditRow({
-      title: project.title,
-      responsible_ids: project.responsibles?.map(r => r.id) ?? [],
-      status: project.status,
-      progress: project.progress ?? 0,
-      due_date: project.due_date || '',
-      future_plan: project.future_plan,
-      problems: project.problems,
-      custom_values: cvMap,
-    });
-  };
-
-  const saveEdit = async (projectId) => {
-    const cvArray = Object.entries(editRow.custom_values || {}).map(([column_id, value]) => ({
-      column_id: Number(column_id), value,
-    }));
-    await projectsApi.update(projectId, {
-      ...editRow,
-      custom_values: cvArray,
-    });
-    setEditingId(null);
-    fetchAll();
-  };
-
-  const cancelEdit = () => setEditingId(null);
-
-  const addRow = async () => {
-    setAddRowLoading(true);
-    try {
-      await projectsApi.create({ title: 'پروژه جدید', section_id: sectionId });
-      fetchAll();
-    } finally {
-      setAddRowLoading(false);
-    }
-  };
-
-
-  const deleteProject = async () => {
-    setDeleteLoading(true);
-    try {
-      await projectsApi.remove(deleteTarget);
-      setDeleteTarget(null);
-      fetchAll();
-    } catch (err) {
-      if (err.response?.status === 409) {
-        setDeleteTarget(null);
-        fetchAll();
-      }
-    } finally {
-      setDeleteLoading(false);
-    }
-  };
-
-  const handleArchive = async (id, archive) => {
-    await projectsApi.archive(id, archive);
-    fetchAll();
-  };
 
   const addColumn = async (e) => {
     e.preventDefault();
@@ -269,11 +186,7 @@ function ProjectsTab() {
     fetchAll();
   };
 
-  if (loading) return (
-    <div className="flex items-center justify-center h-64">
-      <div className="w-8 h-8 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin" />
-    </div>
-  );
+  if (loading) return <Spinner />;
 
   return (
     <div>
@@ -303,7 +216,7 @@ function ProjectsTab() {
                   افزودن ستون
                 </button>
                 <button
-                  onClick={addRow}
+                  onClick={() => addRow({ title: 'پروژه جدید', section_id: sectionId })}
                   disabled={addRowLoading}
                   className="flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-sm font-medium transition-colors"
                 >
@@ -549,7 +462,7 @@ function ProjectsTab() {
 
       <Modal
         open={!!historyTarget}
-        onClose={() => { setHistoryTarget(null); setHistoryRows([]); }}
+        onClose={closeHistory}
         title="تاریخچه وضعیت"
         width="max-w-md"
       >
@@ -608,7 +521,7 @@ function PersonnelTab() {
     }
   };
 
-  if (loading) return <div className="flex items-center justify-center h-64"><div className="w-8 h-8 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin" /></div>;
+  if (loading) return <Spinner />;
 
   return (
     <div>
@@ -690,17 +603,6 @@ function OngoingTasksTab() {
   const [loading, setLoading] = useState(true);
   const [showArchived, setShowArchived] = useState(false);
 
-  const [editingId, setEditingId] = useState(null);
-  const [editRow, setEditRow] = useState({});
-
-  const [deleteTarget, setDeleteTarget] = useState(null);
-  const [deleteLoading, setDeleteLoading] = useState(false);
-
-  const [addRowLoading, setAddRowLoading] = useState(false);
-
-  const [historyTarget, setHistoryTarget] = useState(null);
-  const [historyRows, setHistoryRows] = useState([]);
-
   const fetchAll = useCallback(async () => {
     try {
       const params = { section_id: sectionId };
@@ -718,66 +620,24 @@ function OngoingTasksTab() {
 
   useEffect(() => { fetchAll(); }, [fetchAll]);
 
-  useEffect(() => {
-    if (!historyTarget) return;
-    ongoingTasksApi.getHistory(historyTarget).then(r => setHistoryRows(r.data));
-  }, [historyTarget]);
-
-  const startEdit = (task) => {
-    setEditingId(task.id);
-    setEditRow({
+  const {
+    editingId, editRow, setEditRow,
+    deleteTarget, setDeleteTarget, deleteLoading,
+    addRowLoading,
+    historyTarget, setHistoryTarget, historyRows, closeHistory,
+    startEdit, cancelEdit, saveEdit, addRow, deleteRow: deleteTask, handleArchive,
+  } = useTableEdit({
+    api: ongoingTasksApi,
+    makeEditRow: task => ({
       title: task.title,
       responsible_ids: task.responsibles?.map(r => r.id) ?? [],
       status: task.status || 'in_progress',
       note: task.note,
-    });
-  };
+    }),
+    fetchAll,
+  });
 
-  const saveEdit = async (taskId) => {
-    await ongoingTasksApi.update(taskId, { ...editRow });
-    setEditingId(null);
-    fetchAll();
-  };
-
-  const cancelEdit = () => setEditingId(null);
-
-  const addRow = async () => {
-    setAddRowLoading(true);
-    try {
-      await ongoingTasksApi.create({ title: 'وظیفه جدید', section_id: sectionId });
-      fetchAll();
-    } finally {
-      setAddRowLoading(false);
-    }
-  };
-
-
-  const deleteTask = async () => {
-    setDeleteLoading(true);
-    try {
-      await ongoingTasksApi.remove(deleteTarget);
-      setDeleteTarget(null);
-      fetchAll();
-    } catch (err) {
-      if (err.response?.status === 409) {
-        setDeleteTarget(null);
-        fetchAll();
-      }
-    } finally {
-      setDeleteLoading(false);
-    }
-  };
-
-  const handleArchive = async (id, archive) => {
-    await ongoingTasksApi.archive(id, archive);
-    fetchAll();
-  };
-
-  if (loading) return (
-    <div className="flex items-center justify-center h-64">
-      <div className="w-8 h-8 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin" />
-    </div>
-  );
+  if (loading) return <Spinner />;
 
   return (
     <div>
@@ -799,7 +659,7 @@ function OngoingTasksTab() {
             </button>
             {canEdit && (
               <button
-                onClick={addRow}
+                onClick={() => addRow({ title: 'وظیفه جدید', section_id: sectionId })}
                 disabled={addRowLoading}
                 className="flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-sm font-medium transition-colors"
               >
@@ -880,7 +740,7 @@ function OngoingTasksTab() {
                       <td className="px-4 py-3 text-gray-200 font-medium">{t.title}</td>
                       <td className="px-4 py-3 text-gray-300">{t.responsibles?.length ? t.responsibles.map(r => r.name).join('، ') : <span className="text-gray-600">—</span>}</td>
                       <td className="px-4 py-3">
-                        <RegPill status={t.status} config={TASK_STATUS_CONFIG} />
+                        <StatusBadge status={t.status} />
                       </td>
                       <td className="px-4 py-3 text-gray-300 max-w-md truncate">{t.note || <span className="text-gray-600">—</span>}</td>
                       {canEdit && (
@@ -937,7 +797,7 @@ function OngoingTasksTab() {
 
       <Modal
         open={!!historyTarget}
-        onClose={() => { setHistoryTarget(null); setHistoryRows([]); }}
+        onClose={closeHistory}
         title="تاریخچه وضعیت"
         width="max-w-md"
       >
@@ -967,11 +827,7 @@ function RegistriesTab() {
       .finally(() => setLoading(false));
   }, [sectionId]);
 
-  if (loading) return (
-    <div className="flex items-center justify-center h-64">
-      <div className="w-8 h-8 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin" />
-    </div>
-  );
+  if (loading) return <Spinner />;
 
   const expiredContracts  = contracts.filter(c => contractExpiryTag(c) === 'expired');
   const expiringContracts = contracts.filter(c => contractExpiryTag(c) === 'expiring');
@@ -1026,7 +882,7 @@ function RegistriesTab() {
                         tag === 'expiring' ? 'bg-amber-950/30' : 'hover:bg-gray-800/20'
                       }`}>
                         <td className="px-4 py-3 text-gray-200 font-medium">{c.title}</td>
-                        <td className="px-4 py-3"><RegPill status={c.status} config={CONTRACT_STATUS_CONFIG} /></td>
+                        <td className="px-4 py-3"><StatusBadge status={c.status} /></td>
                         <td className="px-4 py-3 text-gray-300">{c.counterparty || <span className="text-gray-600">—</span>}</td>
                         <td className="px-4 py-3">
                           {c.end_date
@@ -1062,7 +918,7 @@ function RegistriesTab() {
                   {purchases.map(p => (
                     <tr key={p.id} className="border-b border-gray-800/60 hover:bg-gray-800/20 transition-colors">
                       <td className="px-4 py-3 text-gray-200 font-medium">{p.title}</td>
-                      <td className="px-4 py-3"><RegPill status={p.status} config={PURCHASE_STATUS_CONFIG} /></td>
+                      <td className="px-4 py-3"><StatusBadge status={p.status} /></td>
                       <td className="px-4 py-3 text-gray-300">{p.supplier || <span className="text-gray-600">—</span>}</td>
                       <td className="px-4 py-3 text-gray-300">{p.amount || <span className="text-gray-600">—</span>}</td>
                     </tr>
@@ -1092,7 +948,7 @@ function RegistriesTab() {
                   {tenders.map(t => (
                     <tr key={t.id} className="border-b border-gray-800/60 hover:bg-gray-800/20 transition-colors">
                       <td className="px-4 py-3 text-gray-200 font-medium">{t.title}</td>
-                      <td className="px-4 py-3"><RegPill status={t.status} config={TENDER_STATUS_CONFIG} /></td>
+                      <td className="px-4 py-3"><StatusBadge status={t.status} /></td>
                       <td className="px-4 py-3 text-gray-300">{t.estimated_amount || <span className="text-gray-600">—</span>}</td>
                       <td className="px-4 py-3 text-gray-300">{t.deadline || <span className="text-gray-600">—</span>}</td>
                     </tr>

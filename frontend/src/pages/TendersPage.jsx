@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { useTableEdit } from '../hooks/useTableEdit';
 import { useAuth } from '../context/AuthContext';
 import PageHeader from '../components/PageHeader';
 import StatCard from '../components/StatCard';
@@ -13,11 +14,8 @@ import FilterBar from '../components/FilterBar';
 import { Plus, Trash2, PencilLine, Check, X, Gavel, Archive, History } from 'lucide-react';
 import { TENDER_STATUS_CONFIG as STATUS_CONFIG, TENDER_STATUS_OPTIONS as STATUS_OPTIONS } from '../config/statusConfigs';
 import { isWithinDeletionWindow } from '../utils/isWithinDeletionWindow';
-
-function StatusPill({ status }) {
-  const { label, cls } = STATUS_CONFIG[status] || STATUS_CONFIG.open;
-  return <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${cls}`}>{label}</span>;
-}
+import StatusBadge from '../components/StatusBadge';
+import Spinner from '../components/Spinner';
 
 export default function TendersPage() {
   const { user } = useAuth();
@@ -30,16 +28,6 @@ export default function TendersPage() {
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState(null);
 
-  const [editingId, setEditingId] = useState(null);
-  const [editRow, setEditRow] = useState({});
-
-  const [deleteTarget, setDeleteTarget] = useState(null);
-  const [deleteLoading, setDeleteLoading] = useState(false);
-  const [addRowLoading, setAddRowLoading] = useState(false);
-
-  const [historyTarget, setHistoryTarget] = useState(null);
-  const [historyRows, setHistoryRows] = useState([]);
-
   const fetchAll = useCallback(async () => {
     try {
       const r = await tendersApi.list(showArchived ? { archived: 1 } : {});
@@ -51,14 +39,15 @@ export default function TendersPage() {
 
   useEffect(() => { fetchAll(); }, [fetchAll]);
 
-  useEffect(() => {
-    if (!historyTarget) return;
-    tendersApi.getHistory(historyTarget).then(r => setHistoryRows(r.data));
-  }, [historyTarget]);
-
-  const startEdit = (row) => {
-    setEditingId(row.id);
-    setEditRow({
+  const {
+    editingId, editRow, setEditRow,
+    deleteTarget, setDeleteTarget, deleteLoading,
+    addRowLoading,
+    historyTarget, setHistoryTarget, historyRows, closeHistory,
+    startEdit, cancelEdit, saveEdit, addRow, deleteRow, handleArchive,
+  } = useTableEdit({
+    api: tendersApi,
+    makeEditRow: row => ({
       title: row.title,
       status: row.status,
       estimated_amount: row.estimated_amount,
@@ -66,55 +55,13 @@ export default function TendersPage() {
       winner: row.winner,
       description: row.description,
       section_ids: row.sections?.map(s => s.id) ?? [],
-    });
-  };
-
-  const saveEdit = async (id) => {
-    await tendersApi.update(id, { ...editRow });
-    setEditingId(null);
-    fetchAll();
-  };
-
-  const cancelEdit = () => setEditingId(null);
-
-  const addRow = async () => {
-    setAddRowLoading(true);
-    try {
-      await tendersApi.create({ title: 'مناقصه جدید' });
-      fetchAll();
-    } finally {
-      setAddRowLoading(false);
-    }
-  };
+    }),
+    fetchAll,
+  });
 
   const canDelete = isWithinDeletionWindow;
 
-  const deleteRow = async () => {
-    setDeleteLoading(true);
-    try {
-      await tendersApi.remove(deleteTarget);
-      setDeleteTarget(null);
-      fetchAll();
-    } catch (err) {
-      if (err.response?.status === 409) {
-        setDeleteTarget(null);
-        fetchAll();
-      }
-    } finally {
-      setDeleteLoading(false);
-    }
-  };
-
-  const handleArchive = async (id, archive) => {
-    await tendersApi.archive(id, archive);
-    fetchAll();
-  };
-
-  if (loading) return (
-    <div className="flex items-center justify-center h-64">
-      <div className="w-8 h-8 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin" />
-    </div>
-  );
+  if (loading) return <Spinner />;
 
   const colCount = canEdit ? 8 : 7;
 
@@ -144,7 +91,7 @@ export default function TendersPage() {
             </button>
             {canEdit && (
               <button
-                onClick={addRow}
+                onClick={() => addRow({ title: 'مناقصه جدید' })}
                 disabled={addRowLoading}
                 className="flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-sm font-medium transition-colors"
               >
@@ -250,7 +197,7 @@ export default function TendersPage() {
                   ) : (
                     <>
                       <td className="px-4 py-3 text-gray-200 font-medium">{t.title}</td>
-                      <td className="px-4 py-3"><StatusPill status={t.status} /></td>
+                      <td className="px-4 py-3"><StatusBadge status={t.status} /></td>
                       <td className="px-4 py-3 text-gray-300">{t.estimated_amount || <span className="text-gray-600">—</span>}</td>
                       <td className="px-4 py-3 text-gray-300">{t.deadline || <span className="text-gray-600">—</span>}</td>
                       <td className="px-4 py-3 text-gray-300">{t.winner || <span className="text-gray-600">—</span>}</td>
@@ -312,7 +259,7 @@ export default function TendersPage() {
 
       <Modal
         open={!!historyTarget}
-        onClose={() => { setHistoryTarget(null); setHistoryRows([]); }}
+        onClose={closeHistory}
         title="تاریخچه وضعیت"
         width="max-w-md"
       >

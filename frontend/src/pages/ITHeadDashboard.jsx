@@ -16,30 +16,9 @@ import {
   ChevronLeft, ShoppingCart, Gavel, FileSignature,
   LayoutDashboard, FolderKanban, ListChecks, Building2, AlertTriangle, Clock,
 } from 'lucide-react';
-import DateObject from 'react-date-object';
-import persian from 'react-date-object/calendars/persian';
-import persian_fa from 'react-date-object/locales/persian_fa';
-import gregorian from 'react-date-object/calendars/gregorian';
-
-function toPersianDate(isoStr) {
-  if (!isoStr) return null;
-  return new DateObject(new Date(isoStr + 'T00:00:00')).convert(persian, persian_fa).format('D MMMM YYYY');
-}
-
-function contractExpiryTag(c) {
-  if (!['active', 'renewed'].includes(c.status) || !c.end_date) return null;
-  const parts = c.end_date.split('/').map(Number);
-  if (parts.length !== 3) return null;
-  try {
-    const g = new DateObject({ year: parts[0], month: parts[1], day: parts[2], calendar: persian }).convert(gregorian);
-    const end = new Date(g.year, g.month.number - 1, g.day);
-    const today = new Date(); today.setHours(0, 0, 0, 0);
-    const in60 = new Date(today); in60.setDate(in60.getDate() + 60);
-    if (end < today) return 'expired';
-    if (end <= in60) return 'expiring';
-  } catch (_) {}
-  return null;
-}
+import { toPersianDate, contractExpiryTag } from '../utils/dateHelpers';
+import { ALL_STATUS_CONFIG } from '../config/statusConfigs';
+import Spinner from '../components/Spinner';
 
 const PROJECT_STATUS_COLORS = {
   not_started: '#6b7280',
@@ -99,11 +78,7 @@ export default function ITHeadDashboard() {
     projectsApi.deadlineChanges().then(r => setDeadlineChanges(r.data)).catch(() => {});
   }, []);
 
-  if (loading) return (
-    <div className="flex items-center justify-center h-64">
-      <div className="w-8 h-8 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin" />
-    </div>
-  );
+  if (loading) return <Spinner />;
 
   const shared = { sections, allProjects, allTasks, allPurchases, allTenders, allContracts, deadlineChanges, navigate };
 
@@ -153,40 +128,11 @@ const TASK_STATUS_ROWS = [
   { key: 'completed',    label: 'تکمیل',     valueClass: 'text-emerald-400' },
 ];
 
-const STATUS_BADGE_STYLES = {
-  // projects & tasks
-  not_started: 'bg-gray-800 text-gray-300',
-  pending:     'bg-gray-800 text-gray-300',
-  in_progress: 'bg-blue-900/50 text-blue-300',
-  on_hold:     'bg-amber-900/50 text-amber-300',
-  completed:   'bg-emerald-900/50 text-emerald-300',
-  // purchases
-  approved:    'bg-blue-900/50 text-blue-300',
-  purchased:   'bg-indigo-900/50 text-indigo-300',
-  delivered:   'bg-emerald-900/50 text-emerald-300',
-  // tenders
-  open:        'bg-blue-900/50 text-blue-300',
-  evaluating:  'bg-indigo-900/50 text-indigo-300',
-  awarded:     'bg-emerald-900/50 text-emerald-300',
-  // contracts
-  active:      'bg-emerald-900/50 text-emerald-300',
-  renewed:     'bg-blue-900/50 text-blue-300',
-  expired:     'bg-gray-800 text-gray-400',
-  cancelled:   'bg-red-900/50 text-red-300',
-};
-
-const STATUS_LABELS_ALL = {
-  not_started: 'شروع نشده', pending: 'شروع نشده', in_progress: 'در جریان',
-  on_hold: 'متوقف', completed: 'تکمیل شده', approved: 'تأیید شده',
-  purchased: 'خریداری شده', delivered: 'تحویل شده', open: 'در حال برگزاری',
-  evaluating: 'در حال ارزیابی', awarded: 'برنده اعلام شده',
-  active: 'فعال', renewed: 'تمدید شده', expired: 'خاتمه یافته', cancelled: 'لغو شده',
-};
-
 function StatusPill({ status }) {
+  const cfg = ALL_STATUS_CONFIG[status] ?? { label: status, cls: 'bg-gray-800 text-gray-400' };
   return (
-    <span className={`inline-block px-2 py-0.5 rounded-md text-xs font-medium ${STATUS_BADGE_STYLES[status] ?? 'bg-gray-800 text-gray-400'}`}>
-      {STATUS_LABELS_ALL[status] ?? status}
+    <span className={`inline-block px-2 py-0.5 rounded-md text-xs font-medium ${cfg.cls}`}>
+      {cfg.label}
     </span>
   );
 }

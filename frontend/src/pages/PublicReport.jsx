@@ -4,48 +4,19 @@ import { report as reportApi } from '../api';
 import DateObject from 'react-date-object';
 import persian from 'react-date-object/calendars/persian';
 import persian_fa from 'react-date-object/locales/persian_fa';
-
-function toPersianDate(isoStr) {
-  if (!isoStr) return null;
-  return new DateObject(new Date(isoStr + 'T00:00:00')).convert(persian, persian_fa).format('D MMMM YYYY');
-}
 import {
   ChevronDown, ChevronUp, Printer, Monitor,
   FolderKanban, ListChecks, ShoppingCart, Gavel, FileSignature, AlertTriangle,
 } from 'lucide-react';
-
-// ── Status helpers ─────────────────────────────────────────────────────────────
-
-const S_LABEL = {
-  not_started: 'شروع نشده', pending: 'شروع نشده', in_progress: 'در جریان',
-  on_hold: 'متوقف', completed: 'تکمیل شده', approved: 'تأیید شده',
-  purchased: 'خریداری شده', delivered: 'تحویل شده', open: 'در حال برگزاری',
-  evaluating: 'در حال ارزیابی', awarded: 'برنده اعلام شده',
-  active: 'فعال', renewed: 'تمدید شده', expired: 'خاتمه یافته', cancelled: 'لغو شده',
-};
-
-const S_COLOR = {
-  not_started: 'bg-gray-700/60 text-gray-300',
-  pending:     'bg-gray-700/60 text-gray-300',
-  in_progress: 'bg-blue-900/60 text-blue-300',
-  on_hold:     'bg-amber-900/60 text-amber-300',
-  completed:   'bg-emerald-900/60 text-emerald-300',
-  approved:    'bg-blue-900/60 text-blue-300',
-  purchased:   'bg-indigo-900/60 text-indigo-300',
-  delivered:   'bg-emerald-900/60 text-emerald-300',
-  open:        'bg-blue-900/60 text-blue-300',
-  evaluating:  'bg-indigo-900/60 text-indigo-300',
-  awarded:     'bg-emerald-900/60 text-emerald-300',
-  active:      'bg-emerald-900/60 text-emerald-300',
-  renewed:     'bg-blue-900/60 text-blue-300',
-  expired:     'bg-gray-700/60 text-gray-400',
-  cancelled:   'bg-red-900/60 text-red-300',
-};
+import { toPersianDate } from '../utils/dateHelpers';
+import { ALL_STATUS_CONFIG } from '../config/statusConfigs';
+import Spinner from '../components/Spinner';
 
 function StatusPill({ status }) {
+  const cfg = ALL_STATUS_CONFIG[status] ?? { label: status, cls: 'bg-gray-700/60 text-gray-300' };
   return (
-    <span className={`inline-block px-2.5 py-0.5 rounded-md text-xs font-medium ${S_COLOR[status] ?? 'bg-gray-700/60 text-gray-300'}`}>
-      {S_LABEL[status] ?? status}
+    <span className={`inline-block px-2.5 py-0.5 rounded-md text-xs font-medium ${cfg.cls}`}>
+      {cfg.label}
     </span>
   );
 }
@@ -331,11 +302,7 @@ export default function PublicReport() {
     </div>
   );
 
-  if (!data) return (
-    <div className="min-h-screen bg-gray-950 flex items-center justify-center">
-      <div className="w-10 h-10 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin" />
-    </div>
-  );
+  if (!data) return <Spinner className="min-h-screen bg-gray-950 flex items-center justify-center" />;
 
   const { sections, projects, tasks, purchases, tenders, contracts, generated_at } = data;
 

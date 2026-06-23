@@ -51,3 +51,12 @@ export const TASK_STATUS_OPTIONS     = toOptions(TASK_STATUS_CONFIG);
 export const PURCHASE_STATUS_OPTIONS = toOptions(PURCHASE_STATUS_CONFIG);
 export const TENDER_STATUS_OPTIONS   = toOptions(TENDER_STATUS_CONFIG);
 export const CONTRACT_STATUS_OPTIONS = toOptions(CONTRACT_STATUS_CONFIG);
+
+// Merged flat config covering all domains — use where the status domain is unknown (e.g. PublicReport).
+export const ALL_STATUS_CONFIG = {
+  ...PROJECT_STATUS_CONFIG,
+  ...TASK_STATUS_CONFIG,
+  ...PURCHASE_STATUS_CONFIG,
+  ...TENDER_STATUS_CONFIG,
+  ...CONTRACT_STATUS_CONFIG,
+};

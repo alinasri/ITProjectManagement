@@ -9,6 +9,8 @@ import ConfirmDialog from '../components/ConfirmDialog';
 import { sections as sectionsApi, users as usersApi, projects as projectsApi } from '../api';
 import { useSections } from '../context/SectionsContext';
 import PasswordInput from '../components/PasswordInput';
+import Spinner from '../components/Spinner';
+import { ROLE_LABELS } from '../config/roles';
 import { Plus, Trash2, PencilLine, Check, X, ChevronLeft, Power, PowerOff } from 'lucide-react';
 import { isWithinDeletionWindow } from '../utils/isWithinDeletionWindow';
 
@@ -279,10 +281,7 @@ function UsersTab() {
     }
   };
 
-  const roleLabel = {
-    super_admin: 'مدیر سیستم', it_head: 'مدیر IT', section_head: 'مسئول بخش',
-    purchase_admin: 'مدیر خرید', tender_admin: 'مدیر مناقصات', contract_admin: 'مدیر قراردادها',
-  };
+  const roleLabel = ROLE_LABELS;
 
   if (loading) return <Spinner />;
 
@@ -496,10 +495,3 @@ function UserFormModal({ open, onClose, sections, editUser, onSaved }) {
   );
 }
 
-function Spinner() {
-  return (
-    <div className="flex items-center justify-center h-64">
-      <div className="w-8 h-8 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin" />
-    </div>
-  );
-}

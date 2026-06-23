@@ -1,13 +1,7 @@
 import { NavLink, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import { ROLE_LABELS } from '../config/roles';
 import { LogOut, Monitor, Users, FolderKanban, LayoutDashboard, Shield, ChevronLeft, ListChecks, ShoppingCart, Gavel, FileSignature, KeyRound } from 'lucide-react';
-
-const STATUS_LABELS = {
-  not_started: 'شروع نشده',
-  in_progress: 'در حال انجام',
-  on_hold: 'متوقف',
-  completed: 'تکمیل شده',
-};
 
 export default function Sidebar({ sections = [], activeSectionId }) {
   const { user, logout } = useAuth();
@@ -18,14 +12,7 @@ export default function Sidebar({ sections = [], activeSectionId }) {
     navigate('/login');
   };
 
-  const roleLabel = {
-    super_admin: 'مدیر سیستم',
-    it_head: 'مدیر IT',
-    section_head: 'مسئول بخش',
-    purchase_admin: 'مدیر خرید',
-    tender_admin: 'مدیر مناقصات',
-    contract_admin: 'مدیر قراردادها',
-  }[user?.role] || '';
+  const roleLabel = ROLE_LABELS[user?.role] || '';
 
   return (
     <aside className="w-64 shrink-0 bg-gray-900 border-l border-gray-800 flex flex-col h-screen sticky top-0 overflow-y-auto scrollbar-thin">
