@@ -4,7 +4,12 @@
 // next middleware or route handler.
 
 const jwt = require('jsonwebtoken');
+const db  = require('../db/schema');
+
 const JWT_SECRET = process.env.JWT_SECRET || 'change-this-secret-in-production';
+
+// Compiled once at module load; called on every authenticated request.
+const checkActive = db.prepare('SELECT is_active, is_deleted FROM users WHERE id = ?');
 
 // requireAuth — guards any route that requires a logged-in user.
 // Looks for a JWT token in two places (in order):
@@ -27,8 +32,7 @@ function requireAuth(req, res, next) {
 
     // Re-query the database to catch accounts disabled after the token was issued.
     // Without this, a deactivated user's token would still work until it expires (8h).
-    const db = require('../db/schema');
-    const user = db.prepare('SELECT is_active, is_deleted FROM users WHERE id = ?').get(req.user.id);
+    const user = checkActive.get(req.user.id);
     if (!user || user.is_active === 0 || user.is_deleted === 1) {
       return res.status(401).json({ error: 'Account disabled' });
     }

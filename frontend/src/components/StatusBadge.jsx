@@ -1,12 +1,7 @@
-export const STATUS_CONFIG = {
-  not_started:  { label: 'شروع نشده',    cls: 'bg-gray-700/60 text-gray-300' },
-  in_progress:  { label: 'در حال انجام', cls: 'bg-blue-900/60 text-blue-300' },
-  on_hold:      { label: 'متوقف',         cls: 'bg-amber-900/60 text-amber-300' },
-  completed:    { label: 'تکمیل شده',    cls: 'bg-emerald-900/60 text-emerald-300' },
-};
+import { PROJECT_STATUS_CONFIG, PROJECT_STATUS_OPTIONS } from '../config/statusConfigs';
 
 export default function StatusBadge({ status }) {
-  const { label, cls } = STATUS_CONFIG[status] || STATUS_CONFIG.not_started;
+  const { label, cls } = PROJECT_STATUS_CONFIG[status] || PROJECT_STATUS_CONFIG.not_started;
   return (
     <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${cls}`}>
       {label}
@@ -14,4 +9,5 @@ export default function StatusBadge({ status }) {
   );
 }
 
-export const STATUS_OPTIONS = Object.entries(STATUS_CONFIG).map(([value, { label }]) => ({ value, label }));
+// Re-exported under the old names so existing callers don't need to change.
+export { PROJECT_STATUS_CONFIG as STATUS_CONFIG, PROJECT_STATUS_OPTIONS as STATUS_OPTIONS };

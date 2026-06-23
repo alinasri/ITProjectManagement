@@ -11,15 +11,8 @@ import { tenders as tendersApi } from '../api';
 import { useSections } from '../context/SectionsContext';
 import FilterBar from '../components/FilterBar';
 import { Plus, Trash2, PencilLine, Check, X, Gavel, Archive, History } from 'lucide-react';
-
-const STATUS_CONFIG = {
-  open:       { label: 'در حال برگزاری',  cls: 'bg-blue-900/60 text-blue-300' },
-  evaluating: { label: 'در حال ارزیابی',  cls: 'bg-amber-900/60 text-amber-300' },
-  awarded:    { label: 'برنده اعلام شده', cls: 'bg-emerald-900/60 text-emerald-300' },
-  completed:  { label: 'خاتمه یافته',     cls: 'bg-gray-700/60 text-gray-300' },
-  cancelled:  { label: 'لغو شده',         cls: 'bg-red-900/60 text-red-300' },
-};
-const STATUS_OPTIONS = Object.entries(STATUS_CONFIG).map(([value, { label }]) => ({ value, label }));
+import { TENDER_STATUS_CONFIG as STATUS_CONFIG, TENDER_STATUS_OPTIONS as STATUS_OPTIONS } from '../config/statusConfigs';
+import { isWithinDeletionWindow } from '../utils/isWithinDeletionWindow';
 
 function StatusPill({ status }) {
   const { label, cls } = STATUS_CONFIG[status] || STATUS_CONFIG.open;
@@ -94,7 +87,7 @@ export default function TendersPage() {
     }
   };
 
-  const canDelete = (createdAt) => Date.now() - new Date(createdAt + 'Z').getTime() < 10 * 60 * 1000;
+  const canDelete = isWithinDeletionWindow;
 
   const deleteRow = async () => {
     setDeleteLoading(true);

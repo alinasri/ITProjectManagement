@@ -30,13 +30,8 @@ function contractExpiryTag(c) {
   return null;
 }
 
-const STATUS_CONFIG = {
-  active:    { label: 'فعال',          cls: 'bg-emerald-900/60 text-emerald-300' },
-  renewed:   { label: 'تمدید شده',     cls: 'bg-blue-900/60 text-blue-300' },
-  expired:   { label: 'خاتمه یافته',   cls: 'bg-gray-700/60 text-gray-300' },
-  cancelled: { label: 'لغو شده',       cls: 'bg-red-900/60 text-red-300' },
-};
-const STATUS_OPTIONS = Object.entries(STATUS_CONFIG).map(([value, { label }]) => ({ value, label }));
+import { CONTRACT_STATUS_CONFIG as STATUS_CONFIG, CONTRACT_STATUS_OPTIONS as STATUS_OPTIONS } from '../config/statusConfigs';
+import { isWithinDeletionWindow } from '../utils/isWithinDeletionWindow';
 
 function StatusPill({ status }) {
   const { label, cls } = STATUS_CONFIG[status] || STATUS_CONFIG.active;
@@ -112,7 +107,7 @@ export default function ContractsPage() {
     }
   };
 
-  const canDelete = (createdAt) => Date.now() - new Date(createdAt + 'Z').getTime() < 10 * 60 * 1000;
+  const canDelete = isWithinDeletionWindow;
 
   const deleteRow = async () => {
     setDeleteLoading(true);

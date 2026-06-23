@@ -10,6 +10,7 @@ import { sections as sectionsApi, users as usersApi, projects as projectsApi } f
 import { useSections } from '../context/SectionsContext';
 import PasswordInput from '../components/PasswordInput';
 import { Plus, Trash2, PencilLine, Check, X, ChevronLeft, Power, PowerOff } from 'lucide-react';
+import { isWithinDeletionWindow } from '../utils/isWithinDeletionWindow';
 
 export default function AdminDashboard() {
   return (
@@ -255,7 +256,7 @@ function UsersTab() {
   }, []);
   useEffect(() => { fetch(); }, [fetch]);
 
-  const canDelete = (createdAt) => Date.now() - new Date(createdAt + 'Z').getTime() < 10 * 60 * 1000;
+  const canDelete = isWithinDeletionWindow;
 
   const handleToggleActive = async (u) => {
     await usersApi.toggleActive(u.id);

@@ -3,7 +3,9 @@ import { Routes, Route, NavLink, useParams, useNavigate } from 'react-router-dom
 import { useAuth } from '../context/AuthContext';
 import PageHeader from '../components/PageHeader';
 import StatCard from '../components/StatCard';
-import StatusBadge, { STATUS_OPTIONS, STATUS_CONFIG as PROJECT_STATUS_CONFIG } from '../components/StatusBadge';
+import StatusBadge from '../components/StatusBadge';
+import { PROJECT_STATUS_CONFIG, PROJECT_STATUS_OPTIONS, TASK_STATUS_CONFIG, TASK_STATUS_OPTIONS, PURCHASE_STATUS_CONFIG, TENDER_STATUS_CONFIG, CONTRACT_STATUS_CONFIG } from '../config/statusConfigs';
+import { isWithinDeletionWindow } from '../utils/isWithinDeletionWindow';
 import Modal from '../components/Modal';
 import ConfirmDialog from '../components/ConfirmDialog';
 import FilterBar from '../components/FilterBar';
@@ -50,26 +52,6 @@ function contractExpiryTag(c) {
   return null;
 }
 
-const CONTRACT_STATUS = {
-  active:    { label: 'فعال',          cls: 'bg-emerald-900/60 text-emerald-300' },
-  renewed:   { label: 'تمدید شده',     cls: 'bg-blue-900/60 text-blue-300' },
-  expired:   { label: 'خاتمه یافته',   cls: 'bg-gray-700/60 text-gray-300' },
-  cancelled: { label: 'لغو شده',       cls: 'bg-red-900/60 text-red-300' },
-};
-const PURCHASE_STATUS = {
-  pending:   { label: 'در انتظار',     cls: 'bg-amber-900/60 text-amber-300' },
-  approved:  { label: 'تأیید شده',     cls: 'bg-blue-900/60 text-blue-300' },
-  purchased: { label: 'خریداری شده',   cls: 'bg-indigo-900/60 text-indigo-300' },
-  delivered: { label: 'تحویل شده',     cls: 'bg-emerald-900/60 text-emerald-300' },
-  cancelled: { label: 'لغو شده',       cls: 'bg-red-900/60 text-red-300' },
-};
-const TENDER_STATUS = {
-  open:       { label: 'در حال برگزاری',  cls: 'bg-blue-900/60 text-blue-300' },
-  evaluating: { label: 'در حال ارزیابی',  cls: 'bg-indigo-900/60 text-indigo-300' },
-  awarded:    { label: 'برنده اعلام شده', cls: 'bg-emerald-900/60 text-emerald-300' },
-  completed:  { label: 'تکمیل شده',       cls: 'bg-gray-700/60 text-gray-300' },
-  cancelled:  { label: 'لغو شده',         cls: 'bg-red-900/60 text-red-300' },
-};
 
 function RegPill({ status, config }) {
   const s = config[status] ?? { label: status, cls: 'bg-gray-700/60 text-gray-300' };
@@ -246,7 +228,6 @@ function ProjectsTab() {
     }
   };
 
-  const canDelete = (createdAt) => Date.now() - new Date(createdAt + 'Z').getTime() < 10 * 60 * 1000;
 
   const deleteProject = async () => {
     setDeleteLoading(true);
@@ -346,7 +327,7 @@ function ProjectsTab() {
       <FilterBar
         searchTerm={searchTerm}
         onSearchChange={setSearchTerm}
-        statuses={STATUS_OPTIONS}
+        statuses={PROJECT_STATUS_OPTIONS}
         activeStatus={statusFilter}
         onStatusChange={setStatusFilter}
       />
@@ -410,7 +391,7 @@ function ProjectsTab() {
                           value={editRow.status}
                           onChange={e => setEditRow(r => ({ ...r, status: e.target.value }))}
                         >
-                          {STATUS_OPTIONS.map(o => (
+                          {PROJECT_STATUS_OPTIONS.map(o => (
                             <option key={o.value} value={o.value}>{o.label}</option>
                           ))}
                         </select>
@@ -511,7 +492,7 @@ function ProjectsTab() {
                             <button onClick={() => startEdit(p)} className="p-1.5 text-gray-500 hover:text-indigo-400 hover:bg-indigo-900/30 rounded-lg transition-colors">
                               <PencilLine className="w-3.5 h-3.5" />
                             </button>
-                            {canDelete(p.created_at) && (
+                            {isWithinDeletionWindow(p.created_at) && (
                               <button onClick={() => setDeleteTarget(p.id)} className="p-1.5 text-gray-500 hover:text-red-400 hover:bg-red-900/30 rounded-lg transition-colors">
                                 <Trash2 className="w-3.5 h-3.5" />
                               </button>
@@ -698,13 +679,6 @@ function PersonnelTab() {
 
 // ── Ongoing Tasks Tab ─────────────────────────────────────────────────────────
 
-const TASK_STATUS_CONFIG = {
-  pending:     { label: 'در انتظار',    cls: 'bg-gray-700/60 text-gray-300' },
-  in_progress: { label: 'در حال انجام', cls: 'bg-blue-900/60 text-blue-300' },
-  on_hold:     { label: 'متوقف',        cls: 'bg-amber-900/60 text-amber-300' },
-  completed:   { label: 'تکمیل شده',   cls: 'bg-emerald-900/60 text-emerald-300' },
-};
-const TASK_STATUS_OPTIONS = Object.entries(TASK_STATUS_CONFIG).map(([value, { label }]) => ({ value, label }));
 
 function OngoingTasksTab() {
   const { sectionId } = useParams();
@@ -777,7 +751,6 @@ function OngoingTasksTab() {
     }
   };
 
-  const canDeleteTask = (createdAt) => Date.now() - new Date(createdAt + 'Z').getTime() < 10 * 60 * 1000;
 
   const deleteTask = async () => {
     setDeleteLoading(true);
@@ -907,7 +880,7 @@ function OngoingTasksTab() {
                       <td className="px-4 py-3 text-gray-200 font-medium">{t.title}</td>
                       <td className="px-4 py-3 text-gray-300">{t.responsibles?.length ? t.responsibles.map(r => r.name).join('، ') : <span className="text-gray-600">—</span>}</td>
                       <td className="px-4 py-3">
-                        {(() => { const s = TASK_STATUS_CONFIG[t.status] || TASK_STATUS_CONFIG.in_progress; return <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${s.cls}`}>{s.label}</span>; })()}
+                        <RegPill status={t.status} config={TASK_STATUS_CONFIG} />
                       </td>
                       <td className="px-4 py-3 text-gray-300 max-w-md truncate">{t.note || <span className="text-gray-600">—</span>}</td>
                       {canEdit && (
@@ -930,7 +903,7 @@ function OngoingTasksTab() {
                             <button onClick={() => startEdit(t)} className="p-1.5 text-gray-500 hover:text-indigo-400 hover:bg-indigo-900/30 rounded-lg transition-colors">
                               <PencilLine className="w-3.5 h-3.5" />
                             </button>
-                            {canDeleteTask(t.created_at) && (
+                            {isWithinDeletionWindow(t.created_at) && (
                               <button onClick={() => setDeleteTarget(t.id)} className="p-1.5 text-gray-500 hover:text-red-400 hover:bg-red-900/30 rounded-lg transition-colors">
                                 <Trash2 className="w-3.5 h-3.5" />
                               </button>
@@ -1053,7 +1026,7 @@ function RegistriesTab() {
                         tag === 'expiring' ? 'bg-amber-950/30' : 'hover:bg-gray-800/20'
                       }`}>
                         <td className="px-4 py-3 text-gray-200 font-medium">{c.title}</td>
-                        <td className="px-4 py-3"><RegPill status={c.status} config={CONTRACT_STATUS} /></td>
+                        <td className="px-4 py-3"><RegPill status={c.status} config={CONTRACT_STATUS_CONFIG} /></td>
                         <td className="px-4 py-3 text-gray-300">{c.counterparty || <span className="text-gray-600">—</span>}</td>
                         <td className="px-4 py-3">
                           {c.end_date
@@ -1089,7 +1062,7 @@ function RegistriesTab() {
                   {purchases.map(p => (
                     <tr key={p.id} className="border-b border-gray-800/60 hover:bg-gray-800/20 transition-colors">
                       <td className="px-4 py-3 text-gray-200 font-medium">{p.title}</td>
-                      <td className="px-4 py-3"><RegPill status={p.status} config={PURCHASE_STATUS} /></td>
+                      <td className="px-4 py-3"><RegPill status={p.status} config={PURCHASE_STATUS_CONFIG} /></td>
                       <td className="px-4 py-3 text-gray-300">{p.supplier || <span className="text-gray-600">—</span>}</td>
                       <td className="px-4 py-3 text-gray-300">{p.amount || <span className="text-gray-600">—</span>}</td>
                     </tr>
@@ -1119,7 +1092,7 @@ function RegistriesTab() {
                   {tenders.map(t => (
                     <tr key={t.id} className="border-b border-gray-800/60 hover:bg-gray-800/20 transition-colors">
                       <td className="px-4 py-3 text-gray-200 font-medium">{t.title}</td>
-                      <td className="px-4 py-3"><RegPill status={t.status} config={TENDER_STATUS} /></td>
+                      <td className="px-4 py-3"><RegPill status={t.status} config={TENDER_STATUS_CONFIG} /></td>
                       <td className="px-4 py-3 text-gray-300">{t.estimated_amount || <span className="text-gray-600">—</span>}</td>
                       <td className="px-4 py-3 text-gray-300">{t.deadline || <span className="text-gray-600">—</span>}</td>
                     </tr>
