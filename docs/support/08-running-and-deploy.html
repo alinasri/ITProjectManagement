@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>08 — Running &amp; Deploying</title>
+<link rel="stylesheet" href="../assets/style.css" />
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/atom-one-dark.min.css" />
+</head>
+<body>
+<main>
+  <p class="home-link"><a href="../index.html">&larr; Back to index</a></p>
+  <h1>08. Running &amp; Deploying</h1>
+  <p class="lead">What actually happens when you type <code>npm run dev</code>, and how the same codebase becomes a single Docker image in production.</p>
+
+  <h2>Development: two terminals</h2>
+  <p>There is no single command that starts both halves of the app — you run two separate Node processes, each with its own <code>package.json</code> and its own <code>npm run dev</code> script.</p>
+
+  <h3>Backend</h3>
+  <p class="filepath">backend/package.json</p>
+  <pre><code class="language-bash">cd backend
+npm install
+npm run dev</code></pre>
+  <p><code>npm run dev</code> here runs <strong>nodemon</strong>, a tool that watches every <code>.js</code> file under <code>backend/</code> and automatically restarts the Node process whenever one changes — so you don't have to manually stop and rerun the server after every edit. It starts Express listening on <code>http://localhost:3000</code> (or whatever <code>PORT</code> is set to).</p>
+
+  <h3>Frontend</h3>
+  <p class="filepath">frontend/package.json</p>
+  <pre><code class="language-bash">cd frontend
+npm install
+npm run dev</code></pre>
+  <p>This runs <strong>Vite's dev server</strong> on <code>http://localhost:5173</code>. Vite compiles your React/JSX on the fly and pushes updates into the browser almost instantly (hot module replacement) without a full page reload when you edit a component.</p>
+
+  <h3>The proxy that connects them</h3>
+  <p class="filepath">frontend/vite.config.js</p>
+  <pre><code class="language-javascript">export default defineConfig({
+  plugins: [react(), tailwindcss()],
+  server: {
+    proxy: {
+      '/api': 'http://localhost:3000',
+    },
+  },
+});</code></pre>
+  <p>Without this, a <code>fetch('/api/projects')</code> made from a page served on port 5173 would try to hit port 5173 itself — there's nothing listening there for <code>/api</code>. The proxy rule tells Vite: "any request path starting with <code>/api</code>, forward it to port 3000 instead, and relay the response back." This is purely a development convenience; it doesn't exist in the production build at all (covered below).</p>
+
+  <h2>Production: one Docker image, one process</h2>
+  <p>Docker lets you package an application plus everything it needs to run (Node itself, dependencies, files) into one portable image. This project uses a <strong>multi-stage build</strong> — multiple <code>FROM</code> blocks in one Dockerfile, where later stages can copy specific files out of earlier ones, discarding everything else (like the entire <code>node_modules</code> used only to build the frontend).</p>
+
+  <p class="filepath">Dockerfile</p>
+  <pre><code class="language-dockerfile"># Stage 1: Build React frontend
+FROM node:20-alpine AS builder
+WORKDIR /app/frontend
+COPY frontend/package*.json ./
+RUN npm ci
+COPY frontend/ .
+RUN npm run build
+
+# Stage 2: Run Express backend (serves API + built frontend)
+FROM node:20-alpine
+WORKDIR /app
+COPY backend/package*.json ./
+RUN npm ci --omit=dev
+COPY backend/ .
+COPY --from=builder /app/frontend/dist ./public
+
+VOLUME /app/data
+ENV DATA_DIR=/app/data
+ENV NODE_ENV=production
+ENV PORT=3000
+
+EXPOSE 3000
+CMD ["node", "src/app.js"]</code></pre>
+
+  <h3>What each stage does</h3>
+  <ul>
+    <li><strong>Stage 1 ("builder")</strong> installs the frontend's dependencies and runs <code>npm run build</code>, which is <code>vite build</code> under the hood — it compiles all the JSX/React code down to plain, optimized HTML/CSS/JS files in <code>frontend/dist/</code>. This stage is thrown away at the end except for that one output folder.</li>
+    <li><strong>Stage 2</strong> starts fresh, installs only the backend's <em>production</em> dependencies (<code>--omit=dev</code> skips nodemon, ESLint, etc. — things only needed while developing), copies the backend source code in, then copies <code>frontend/dist</code> from stage 1 into <code>backend/public</code>.</li>
+  </ul>
+  <p>That last copy is exactly what makes the line you saw in <a href="01-architecture.html">page 01</a> work: <code>backend/src/app.js</code> checks if a <code>public/</code> folder exists and, if so, serves it as static files plus falls back to <code>index.html</code> for unmatched routes (so React Router still works for direct URL visits like <code>/admin</code>).</p>
+
+  <h3>The data volume</h3>
+  <p><code>VOLUME /app/data</code> plus <code>ENV DATA_DIR=/app/data</code> means the SQLite file lives outside the container's own filesystem, in a Docker-managed volume. This matters because containers are disposable — if you rebuild or replace the container, anything written only inside it is lost. Mounting <code>/app/data</code> as a volume means the database survives container restarts and upgrades.</p>
+
+  <h3>Running it</h3>
+  <pre><code class="language-bash">docker build -t it-pm .
+docker run -p 3000:3000 -v it-pm-data:/app/data it-pm</code></pre>
+  <p><code>-p 3000:3000</code> maps the container's port 3000 to your machine's port 3000. <code>-v it-pm-data:/app/data</code> creates (or reuses) a named volume called <code>it-pm-data</code> and mounts it at <code>/app/data</code> inside the container — this is the actual flag that makes the database persistent.</p>
+
+  <h2>Environment variables that matter</h2>
+  <table>
+    <tr><th>Variable</th><th>Used by</th><th>Purpose</th></tr>
+    <tr><td><code>PORT</code></td><td>backend/src/app.js</td><td>Which port Express listens on (defaults to 3000)</td></tr>
+    <tr><td><code>DATA_DIR</code></td><td>backend/src/db/schema.js</td><td>Where the SQLite file is created/read (defaults to <code>backend/data</code>)</td></tr>
+    <tr><td><code>JWT_SECRET</code></td><td>backend/src/middleware/auth.js, routes/auth.js</td><td>The key used to sign/verify login tokens — must be set to something real in production, or anyone could forge a valid token using the default fallback value</td></tr>
+    <tr><td><code>NODE_ENV</code></td><td>various libraries</td><td>Conventionally signals "production mode" — some libraries (like Express itself) change logging/error-detail behavior based on this</td></tr>
+  </table>
+
+  <div class="callout">
+    <strong>Key idea:</strong> Development optimizes for fast feedback (two servers, instant reload, a proxy gluing them together). Production optimizes for a single deployable, self-contained unit — pre-built static files served by one process, with persistent state pushed out to a volume.
+  </div>
+
+  <section class="quiz">
+    <h2>Self-check</h2>
+    <details>
+      <summary>If you forget to run the frontend's <code>npm run dev</code> and only start the backend, what would happen if you visited <code>http://localhost:3000</code> directly in development?</summary>
+      <p>You'd likely get nothing useful — in development there's no <code>backend/public</code> folder (that only gets created by the Docker build step), so the static-file-serving block in <code>app.js</code> wouldn't activate, and visiting the root path wouldn't match any API route either. In dev you're meant to visit the Vite server on port 5173, not Express directly.</p>
+    </details>
+    <details>
+      <summary>Why does the Dockerfile run <code>npm ci</code> instead of <code>npm install</code>?</summary>
+      <p><code>npm ci</code> installs exactly the versions locked in <code>package-lock.json</code>, deletes any existing <code>node_modules</code> first, and fails if the lockfile and <code>package.json</code> are out of sync — making builds reproducible. <code>npm install</code> can update the lockfile and is meant for active development, not repeatable builds.</p>
+    </details>
+    <details>
+      <summary>What would happen to your data if you ran <code>docker run -p 3000:3000 it-pm</code> (forgetting the <code>-v</code> volume flag), used the app for a while, then removed the container?</summary>
+      <p>Without a mounted volume, <code>/app/data</code> lives only inside that specific container's writable layer. Removing the container deletes that layer — and the entire SQLite database, including all projects, users, and history — along with it.</p>
+    </details>
+    <details>
+      <summary>Try it: open <code>backend/src/middleware/auth.js</code> and find the fallback value for <code>JWT_SECRET</code> if the environment variable isn't set. Why is shipping that default to production risky?</summary>
+      <p>It falls back to the literal string <code>'change-this-secret-in-production'</code>. Since this is visible in the public source code, anyone could use that exact string to forge a valid JWT for any user id and role they want, if a real deployment forgot to override it with a proper secret via the <code>JWT_SECRET</code> environment variable.</p>
+    </details>
+  </section>
+
+  <div class="nav-strip">
+    <a href="07-request-lifecycle.html">&larr; A Request, End to End</a>
+    <a href="09-glossary.html">Next: Glossary &rarr;</a>
+  </div>
+</main>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+<script>hljs.highlightAll();</script>
+</body>
+</html>

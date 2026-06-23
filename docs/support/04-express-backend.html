@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>04 — Express Backend</title>
+<link rel="stylesheet" href="../assets/style.css" />
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/atom-one-dark.min.css" />
+</head>
+<body>
+<main>
+  <p class="home-link"><a href="../index.html">&larr; Back to index</a></p>
+  <h1>04. Express Backend</h1>
+  <p class="lead">What Node.js and Express actually are, what middleware means, and how a route file turns an HTTP request into a database query.</p>
+
+  <h2>What is Node.js?</h2>
+  <p>Node.js is a runtime that lets JavaScript run outside a browser — on a server, with access to things browsers deliberately don't allow, like the filesystem and raw network sockets. Without Node, JavaScript could only run inside a webpage.</p>
+
+  <h2>What is Express?</h2>
+  <p>Node by itself can open a network port and read raw HTTP requests, but doing that for every route by hand is tedious. Express is a small library that adds a clean layer on top: define a path and an HTTP method, and Express runs your function when a matching request arrives — and gives you parsed request bodies, route parameters, and a simple way to send back JSON.</p>
+
+  <h2>In this app — the server entry point</h2>
+  <p class="filepath">backend/src/app.js</p>
+  <pre><code class="language-javascript">const app = express();
+
+app.use(cors({ origin: true, credentials: true }));
+app.use(express.json());
+app.use(cookieParser());
+
+app.use('/api/auth', require('./routes/auth'));
+app.use('/api/sections', require('./routes/sections'));
+app.use('/api/projects', require('./routes/projects'));
+// ...one line per resource
+
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => console.log(`Server running on port ${PORT}`));</code></pre>
+  <p>This file does three things: creates the Express app, registers <strong>middleware</strong> that runs on every request, then mounts one <strong>router</strong> per resource under a URL prefix.</p>
+
+  <h2>What is middleware?</h2>
+  <p>Middleware is a function that sits in the request's path before it reaches your actual route handler. Each middleware gets the request, the response, and a <code>next()</code> function — calling <code>next()</code> passes control to whatever comes next; not calling it (and instead sending a response) stops the request right there. This is exactly how access control works: a middleware can inspect the request and short-circuit it with a <code>401</code> before any business logic runs.</p>
+  <p>Three middlewares run on <em>every</em> request, registered with <code>app.use(...)</code> at the top of <code>app.js</code>:</p>
+  <ul>
+    <li><code>cors(...)</code> — allows the browser (running on a different port in dev) to make requests to this server at all.</li>
+    <li><code>express.json()</code> — parses an incoming JSON request body into <code>req.body</code>, so route handlers don't have to.</li>
+    <li><code>cookieParser()</code> — parses the <code>Cookie</code> header into <code>req.cookies</code>, which is how the login token is read.</li>
+  </ul>
+
+  <h3>Auth middleware — gatekeeping specific routes</h3>
+  <p class="filepath">backend/src/middleware/auth.js</p>
+  <pre><code class="language-javascript">function requireAuth(req, res, next) {
+  const token = req.cookies?.token || req.headers.authorization?.split(' ')[1];
+  if (!token) return res.status(401).json({ error: 'Unauthorized' });
+  try {
+    req.user = jwt.verify(token, JWT_SECRET);
+    // ...check the user is still active in the DB
+    next();
+  } catch {
+    res.status(401).json({ error: 'Invalid token' });
+  }
+}
+
+function requireRole(...roles) {
+  return (req, res, next) => {
+    if (!roles.includes(req.user?.role)) {
+      return res.status(403).json({ error: 'Forbidden' });
+    }
+    next();
+  };
+}</code></pre>
+  <p>Unlike the three global middlewares above, these two are only attached to specific routes that need them — see the next section. <code>requireRole(...roles)</code> is a function that <em>returns</em> a middleware, which is why it's called like <code>requireRole('super_admin', 'section_head')</code> right inside a route definition: it builds a custom checker for that exact route's allowed roles.</p>
+
+  <h2>What is a route handler, and what is REST?</h2>
+  <p><strong>REST</strong> is just a convention for designing APIs: a URL identifies a resource (e.g. <code>/api/projects</code> means "the collection of projects", <code>/api/projects/5</code> means "project number 5"), and the HTTP method describes the action — <code>GET</code> to read, <code>POST</code> to create, <code>PUT</code>/<code>PATCH</code> to update, <code>DELETE</code> to remove.</p>
+
+  <h3>In this app — a full route file</h3>
+  <p class="filepath">backend/src/routes/projects.js</p>
+  <pre><code class="language-javascript">router.get('/', requireAuth, (req, res) => {
+  const projects = db.prepare(
+    'SELECT * FROM projects WHERE is_archived = 0 AND is_deleted = 0 ORDER BY id'
+  ).all();
+  res.json(enrichProjects(projects));
+});
+
+router.post('/', requireAuth, requireRole('super_admin', 'section_head'), (req, res) => {
+  const { title, section_id } = req.body;
+  if (!title?.trim()) return res.status(400).json({ error: 'Title required' });
+  const result = db.prepare(
+    'INSERT INTO projects (title, section_id, status) VALUES (?, ?, ?)'
+  ).run(title.trim(), section_id, 'not_started');
+  res.status(201).json({ id: result.lastInsertRowid });
+});</code></pre>
+  <p>(Simplified from the real file for clarity — the actual version also records an audit-trail entry and handles assigning responsible personnel; see <a href="05-database.html">page 05</a> and <a href="07-request-lifecycle.html">page 07</a> for the full version.)</p>
+  <p>Notice the middleware chain: <code>router.get('/', requireAuth, (req, res) => {...})</code> — Express runs <code>requireAuth</code> first, and only calls the final handler function if <code>requireAuth</code> called <code>next()</code>. The <code>POST</code> route adds a second middleware, <code>requireRole(...)</code>, so creating a project requires <em>both</em> being logged in <em>and</em> having the right role.</p>
+
+  <div class="callout">
+    <strong>Key idea:</strong> A request flows through a pipeline: global middleware (CORS, JSON parsing, cookies) &rarr; route-specific middleware (<code>requireAuth</code>, <code>requireRole</code>) &rarr; the route handler itself, which talks to the database and sends a JSON response. Any step can stop the pipeline early by responding instead of calling <code>next()</code>.
+  </div>
+
+  <section class="quiz">
+    <h2>Self-check</h2>
+    <details>
+      <summary>What would happen if a route handler forgot to call <code>res.json(...)</code> or <code>res.send(...)</code> at all?</summary>
+      <p>The HTTP request would simply hang — Express never closes the response, so the browser (or Axios) waits indefinitely until it eventually times out. Every code path through a route handler must end by sending some response.</p>
+    </details>
+    <details>
+      <summary>In <code>router.post('/', requireAuth, requireRole('super_admin', 'section_head'), handler)</code>, what happens if a logged-in <code>purchase_admin</code> user calls this route?</summary>
+      <p><code>requireAuth</code> passes (they have a valid token), so it calls <code>next()</code>. Then <code>requireRole('super_admin', 'section_head')</code> checks <code>req.user.role</code> — <code>'purchase_admin'</code> isn't in that list, so it responds with <code>403 Forbidden</code> and never calls <code>next()</code>, meaning the actual route handler never runs.</p>
+    </details>
+    <details>
+      <summary>Why is <code>express.json()</code> registered with <code>app.use(...)</code> instead of being added individually to each route?</summary>
+      <p><code>app.use(...)</code> (with no path) registers middleware that runs on every single incoming request, regardless of which route it eventually matches. Since nearly every route needs <code>req.body</code> parsed from JSON, it makes sense to do it once globally rather than repeat it per route.</p>
+    </details>
+    <details>
+      <summary>Try it: open <code>backend/src/routes/auth.js</code> and find a route that does <em>not</em> use <code>requireAuth</code>. Why doesn't it need it?</summary>
+      <p><code>POST /login</code> has no <code>requireAuth</code> — that's the whole point, since a user calling it doesn't have a token yet. It's the route that <em>produces</em> the token in the first place.</p>
+    </details>
+  </section>
+
+  <div class="nav-strip">
+    <a href="03-state-and-api.html">&larr; State &amp; API</a>
+    <a href="05-database.html">Next: Database &amp; Schema &rarr;</a>
+  </div>
+</main>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+<script>hljs.highlightAll();</script>
+</body>
+</html>

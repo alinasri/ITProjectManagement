@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>01 — Architecture</title>
+<link rel="stylesheet" href="../assets/style.css" />
+</head>
+<body>
+<main>
+  <p class="home-link"><a href="../index.html">&larr; Back to index</a></p>
+  <h1>01. Big-Picture Architecture</h1>
+  <p class="lead">Before looking at any code, it helps to see the shape of the whole system: who talks to whom, and where each piece lives.</p>
+
+  <h2>What is a "client-server" app?</h2>
+  <p>This app is split into two programs that run separately and talk over HTTP:</p>
+  <ul>
+    <li><strong>The client</strong> — the React app that runs inside your browser. It draws the screen and reacts to clicks.</li>
+    <li><strong>The server</strong> — the Express app that runs on Node.js. It owns the database and decides what data the client is allowed to see or change.</li>
+  </ul>
+  <p>The client never touches the database directly. It always asks the server, over HTTP, and the server is the only thing with a direct line to the SQLite file. This separation is what lets you (in theory) swap the React app for a phone app later without touching the backend at all.</p>
+
+  <h2>In this app — folder map</h2>
+  <p class="filepath">repo root</p>
+  <pre><code>ITProjectManagement/
+├── backend/            Node.js + Express API server
+│   ├── src/
+│   │   ├── app.js          Express entry point — starts the server
+│   │   ├── db/schema.js    SQLite connection + table definitions
+│   │   ├── db/helpers.js   Audit-trail helper functions
+│   │   ├── middleware/     Auth checks that run before route handlers
+│   │   └── routes/         One file per resource (projects.js, auth.js, ...)
+│   └── data/it_pm.db   The actual SQLite database file
+├── frontend/           React + Vite single-page app
+│   └── src/
+│       ├── main.jsx        React entry point
+│       ├── App.jsx         Routing table
+│       ├── api/            Functions that call the backend over HTTP
+│       ├── context/        App-wide state (who's logged in, etc.)
+│       ├── components/     Reusable UI pieces (buttons, modals, badges)
+│       └── pages/          Full screens (dashboards, login, etc.)
+└── Dockerfile          Builds both into one deployable image</code></pre>
+
+  <h2>Dev mode: two servers, one proxy</h2>
+  <p>While you're developing, two separate processes run on your machine at once:</p>
+  <div class="mermaid">
+graph LR
+  B[Browser] -->|http://localhost:5173| V[Vite Dev Server]
+  V -->|requests starting with /api are proxied| E[Express :3000]
+  E -->|reads/writes| D[(SQLite file<br/>backend/data/it_pm.db)]
+  </div>
+  <p>Vite serves the React app on port <code>5173</code> with instant hot-reload. Express serves the API on port <code>3000</code>. Because the browser can only easily talk to one origin without extra CORS headers, Vite is configured to forward any request starting with <code>/api</code> straight to Express — see <code>frontend/vite.config.js</code>, covered in <a href="08-running-and-deploy.html">page 08</a>.</p>
+
+  <h2>Production: one server</h2>
+  <p>In production (the Docker build), there's no Vite dev server at all. The React code is compiled ahead of time into static HTML/CSS/JS files, and Express simply serves those files itself alongside the API:</p>
+  <div class="mermaid">
+graph LR
+  B[Browser] -->|http://your-server:3000| E[Express :3000]
+  E -->|static files| F[Compiled React build]
+  E -->|/api/*| R[API routes]
+  R --> D[(SQLite file)]
+  </div>
+  <p>This is why <code>backend/src/app.js</code> has a block that serves a <code>public/</code> folder if it exists — that folder is the compiled React app, copied there by the Docker build (see <code>backend/src/app.js</code> lines 24-30, and <a href="08-running-and-deploy.html">page 08</a> for the full Docker walkthrough).</p>
+
+  <div class="callout">
+    <strong>Key idea:</strong> "frontend" and "backend" aren't just folders — they're two separate running programs. In dev they run on different ports and Vite bridges them; in production they collapse into a single Express process.
+  </div>
+
+  <section class="quiz">
+    <h2>Self-check</h2>
+    <details>
+      <summary>Why can't the React app query the SQLite database directly?</summary>
+      <p>The database file lives on the server's disk, not in the browser. The browser has no filesystem access to it — it can only reach the database indirectly, by sending HTTP requests to Express, which runs on the same machine as the database file and is the only thing with a direct connection to it.</p>
+    </details>
+    <details>
+      <summary>In development, what does Vite's proxy actually do?</summary>
+      <p>It watches for any browser request whose path starts with <code>/api</code> and silently forwards it to <code>http://localhost:3000</code> (the Express server), then sends the response back — so the React code can just call <code>/api/projects</code> without needing to know or care that Express is running on a different port.</p>
+    </details>
+    <details>
+      <summary>What's different about how the React code is served in production vs. development?</summary>
+      <p>In development, Vite serves React source files live and recompiles on every change. In production, the React code is pre-compiled once into static files (HTML/CSS/JS) by <code>vite build</code>, and Express just hands those files out like any other static website — no Vite process runs at all.</p>
+    </details>
+    <details>
+      <summary>Try it: open <code>backend/src/app.js</code> and find the line that decides whether to serve the React build. What condition does it check?</summary>
+      <p>It checks <code>fs.existsSync(publicDir)</code> — if a <code>backend/public</code> folder exists (which only happens after the Docker build copies the compiled frontend there), Express serves it as static files and falls back to <code>index.html</code> for any unmatched route (so React Router can handle client-side routes).</p>
+    </details>
+  </section>
+
+  <div class="nav-strip">
+    <a href="../index.html">&larr; Index</a>
+    <a href="02-react-frontend.html">Next: React Frontend &rarr;</a>
+  </div>
+</main>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+<script>mermaid.initialize({ startOnLoad: true, theme: 'dark' });</script>
+</body>
+</html>

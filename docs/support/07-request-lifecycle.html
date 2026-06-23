@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>07 — A Request, End to End</title>
+<link rel="stylesheet" href="../assets/style.css" />
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/atom-one-dark.min.css" />
+</head>
+<body>
+<main>
+  <p class="home-link"><a href="../index.html">&larr; Back to index</a></p>
+  <h1>07. A Request, End to End</h1>
+  <p class="lead">Every previous page covered one layer in isolation. This page traces a single user action — creating a new project — through all of them, in order, so you can see how the pieces actually connect.</p>
+
+  <h2>The scenario</h2>
+  <p>A <code>section_head</code> user is on their <code>SectionDashboard</code> page (<a href="02-react-frontend.html">page 02</a>), fills in a project title, and clicks "Add Project".</p>
+
+  <div class="mermaid">
+sequenceDiagram
+  participant U as User
+  participant C as React Component
+  participant Ax as Axios (api/client.js)
+  participant Vt as Vite Proxy (dev only)
+  participant Ex as Express app.js
+  participant Mw as requireAuth + requireRole
+  participant Rt as routes/projects.js
+  participant Db as SQLite
+
+  U->>C: clicks "Add Project"
+  C->>Ax: projects.create({ title, section_id })
+  Ax->>Vt: POST /api/projects (+ cookie)
+  Vt->>Ex: forwards to localhost:3000/api/projects
+  Ex->>Mw: cors, json, cookieParser run first
+  Mw->>Mw: requireAuth verifies JWT cookie
+  Mw->>Mw: requireRole checks role is allowed
+  Mw->>Rt: next() -> route handler runs
+  Rt->>Db: INSERT INTO projects (...)
+  Db-->>Rt: lastInsertRowid
+  Rt->>Db: INSERT INTO status_history (audit trail)
+  Rt->>Db: SELECT * FROM projects WHERE id = ?
+  Db-->>Rt: the new row
+  Rt-->>Ex: res.status(201).json(project)
+  Ex-->>Ax: HTTP 201 response
+  Ax-->>C: r.data (the new project)
+  C->>C: setList([...list, newProject])
+  C->>U: new project appears on screen
+  </div>
+
+  <h2>Step by step, with real code</h2>
+
+  <h3>1. The component calls the API function</h3>
+  <p>Inside a form submit handler in a section's project list (the general shape, simplified):</p>
+  <pre><code class="language-jsx">const handleAdd = async () => {
+  const r = await projects.create({ title, section_id: sectionId });
+  setList(prev => [...prev, r.data]);
+};</code></pre>
+  <p><code>projects.create</code> is defined in <code>frontend/src/api/index.js</code> as <code>(data) => api.post('/projects', data)</code> — it's a thin wrapper, the real work happens in the shared Axios instance from <a href="03-state-and-api.html">page 03</a>.</p>
+
+  <h3>2. Axios sends the request, the cookie rides along automatically</h3>
+  <p>Because <code>api</code> was created with <code>baseURL: '/api'</code> and <code>withCredentials: true</code>, this becomes an actual HTTP <code>POST</code> to <code>/api/projects</code> with the JSON body <code>{ title, section_id }</code>, and the browser automatically attaches the httpOnly login cookie (<a href="06-auth-flow.html">page 06</a>).</p>
+
+  <h3>3. (Dev only) Vite silently forwards it</h3>
+  <p>In development the browser is talking to <code>localhost:5173</code>, but nothing there understands <code>/api</code> routes. Vite's proxy config (<a href="01-architecture.html">page 01</a>) catches the path prefix and relays the entire request to <code>localhost:3000</code>, where Express is actually listening. In production this step doesn't exist — Express is already serving the page the request came from.</p>
+
+  <h3>4. Express's middleware pipeline runs</h3>
+  <p>First the three global middlewares from <code>app.js</code> run (CORS check, JSON body parsing, cookie parsing — <a href="04-express-backend.html">page 04</a>). Then, because the matched route is <code>router.post('/', requireAuth, requireRole('super_admin', 'section_head'), handler)</code> in <code>routes/projects.js</code>, two more middlewares run in order:</p>
+  <ul>
+    <li><code>requireAuth</code> reads the cookie, verifies the JWT, attaches the decoded payload to <code>req.user</code>, and confirms the account is still active.</li>
+    <li><code>requireRole('super_admin', 'section_head')</code> checks <code>req.user.role</code> is in that list. Since this user is a <code>section_head</code>, it passes.</li>
+  </ul>
+  <p>If either had failed, the route handler below would never run.</p>
+
+  <h3>5. The route handler talks to the database</h3>
+  <p class="filepath">backend/src/routes/projects.js</p>
+  <pre><code class="language-javascript">router.post('/', requireAuth, requireRole('super_admin', 'section_head'), (req, res) => {
+  const { title, section_id } = req.body;
+  const sectionId = req.user.role === 'section_head' ? req.user.section_id : section_id;
+
+  const result = db.prepare(
+    `INSERT INTO projects (title, section_id, status, ...) VALUES (?, ?, ?, ...)`
+  ).run(title.trim(), sectionId, 'not_started', /* ... */);
+
+  const projectId = result.lastInsertRowid;
+  recordStatusChange('project', projectId, null, 'not_started', req.user.id);
+
+  const project = db.prepare('SELECT * FROM projects WHERE id = ?').get(projectId);
+  res.status(201).json(enrichProjects([project])[0]);
+});</code></pre>
+  <p>Notice it doesn't blindly trust <code>section_id</code> from the request body — for a <code>section_head</code>, it forces the project into <em>their own</em> section (<code>req.user.section_id</code>, taken from the verified JWT, not anything the client could fake). This is a server-side authorization check, distinct from the role check the middleware already did.</p>
+  <p>After inserting the project, it immediately writes an audit-trail row via <code>recordStatusChange</code> (<a href="05-database.html">page 05</a>), then re-reads the full row back out (to pick up any database defaults) and sends it back as JSON with status <code>201 Created</code>.</p>
+
+  <h3>6. The response flows back and updates the screen</h3>
+  <p>Axios resolves the promise with the parsed JSON in <code>r.data</code>. Back in the component, <code>setList(prev => [...prev, r.data])</code> adds the new project to React state — which makes React re-render the list, and the new project appears, with no page reload at any point in this entire round trip.</p>
+
+  <div class="callout">
+    <strong>Key idea:</strong> One button click crosses roughly seven boundaries — component, Axios, network/proxy, Express middleware (x2), route handler, database, and back. Nothing here is magic; it's the exact same handful of patterns from pages 02-06, just chained together in sequence.
+  </div>
+
+  <section class="quiz">
+    <h2>Self-check</h2>
+    <details>
+      <summary>Why does the route handler override <code>section_id</code> with <code>req.user.section_id</code> for a <code>section_head</code>, instead of trusting whatever the frontend sent?</summary>
+      <p>Because the request body is fully controllable by whoever is making the HTTP call — a malicious or buggy client could send any <code>section_id</code> it wants. The server can't trust client-supplied data for authorization decisions; it must rely on the verified identity in <code>req.user</code>, which came from a cryptographically signed JWT it issued itself.</p>
+    </details>
+    <details>
+      <summary>At which exact step would the request stop if the user's JWT cookie had expired?</summary>
+      <p>Inside <code>requireAuth</code>, step 4 — <code>jwt.verify</code> would throw because the token's <code>expiresIn</code> window has passed, the catch block sends <code>401 Invalid token</code>, and <code>requireRole</code> and the route handler never run. The frontend's Axios interceptor would then see the 401 and redirect to <code>/login</code>.</p>
+    </details>
+    <details>
+      <summary>Where in this flow does the audit trail (status_history) get written, relative to the actual INSERT?</summary>
+      <p>Immediately after, in the same route handler, using the <code>lastInsertRowid</code> returned by the INSERT. Both happen as separate SQL statements within one request — there's no database transaction wrapping them, so in theory if the server crashed between the two statements you could get a project with no matching history row, but this app doesn't guard against that edge case.</p>
+    </details>
+    <details>
+      <summary>Try it: pick a different action in the app (e.g. creating a purchase, or changing a contract's status) and find its matching route file under <code>backend/src/routes/</code>. Does it follow the same pattern — middleware, then INSERT/UPDATE, then optionally a <code>status_history</code> write, then a fresh SELECT before responding?</summary>
+      <p>It should — this request/response shape (validate &rarr; mutate &rarr; audit &rarr; re-fetch &rarr; respond) repeats across <code>purchases.js</code>, <code>tenders.js</code>, and <code>contracts.js</code> almost verbatim, which is exactly why understanding one route file deeply lets you read all the others quickly.</p>
+    </details>
+  </section>
+
+  <div class="nav-strip">
+    <a href="06-auth-flow.html">&larr; Authentication Flow</a>
+    <a href="08-running-and-deploy.html">Next: Running &amp; Deploying &rarr;</a>
+  </div>
+</main>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+<script>mermaid.initialize({ startOnLoad: true, theme: 'dark' });</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+<script>hljs.highlightAll();</script>
+</body>
+</html>
