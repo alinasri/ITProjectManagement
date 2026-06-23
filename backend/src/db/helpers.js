@@ -73,4 +73,19 @@ function setSections(table, fkCol, id, sectionIds) {
   sectionIds.forEach(sid => insert.run(id, sid));
 }
 
-module.exports = { recordStatusChange, recordFieldChange, setResponsibles, setSections };
+// isWithinDeletionWindow — returns true if the record was created within the last 10 minutes.
+// WHY centralised here: the same 10-minute rule applies to projects, tasks, purchases,
+// tenders, contracts, and users. Without this helper, each service would repeat the
+// identical date-arithmetic calculation, creating five independent places to update
+// if the window ever changes.
+//
+// created_at is stored by SQLite as a UTC string WITHOUT a trailing 'Z', e.g.
+// "2026-06-23 10:05:00". JavaScript's Date constructor treats a string without 'Z' as
+// LOCAL time, which would be wrong on any server not running in UTC. Appending 'Z'
+// forces UTC parsing regardless of the server's local timezone.
+function isWithinDeletionWindow(createdAt) {
+  const ageMs = Date.now() - new Date(createdAt + 'Z').getTime();
+  return ageMs <= 10 * 60 * 1000;
+}
+
+module.exports = { recordStatusChange, recordFieldChange, setResponsibles, setSections, isWithinDeletionWindow };
