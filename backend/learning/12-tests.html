@@ -1,0 +1,402 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Lesson 12 — Testing</title>
+<link rel="stylesheet" href="_shared.css">
+<style>
+  .test-file { background: #1e293b; border: 1px solid #334155; border-radius: 10px; margin: 20px 0 28px; overflow: hidden; }
+  .test-file-header { background: #0f172a; padding: 14px 20px; border-bottom: 1px solid #334155; display: flex; align-items: center; gap: 14px; }
+  .test-file-header h3 { margin: 0; font-size: 0.95rem; color: #38bdf8; font-family: monospace; }
+  .test-file-header .desc { font-size: 0.82rem; color: #64748b; }
+  .test-count { background: #1e293b; border: 1px solid #334155; border-radius: 4px; padding: 2px 8px; font-size: 0.75rem; color: #94a3b8; font-family: monospace; margin-left: auto; }
+  .test-list { padding: 16px 20px; }
+  .test-list ul { margin: 0; list-style: none; padding: 0; }
+  .test-list li { padding: 6px 0; font-size: 0.875rem; color: #94a3b8; border-bottom: 1px solid #1e293b; display: flex; align-items: flex-start; gap: 10px; }
+  .test-list li:last-child { border-bottom: none; }
+  .test-list li::before { content: '✓'; color: #22c55e; flex-shrink: 0; font-weight: 700; margin-top: 1px; }
+  .concept-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin: 16px 0 24px; }
+  @media (max-width: 700px) { .concept-grid { grid-template-columns: 1fr; } }
+  .concept-box { background: #1e293b; border: 1px solid #334155; border-radius: 8px; padding: 16px; }
+  .concept-box h4 { color: #38bdf8; font-size: 0.9rem; margin: 0 0 8px; font-family: monospace; }
+  .concept-box p { color: #94a3b8; font-size: 0.85rem; margin: 0; line-height: 1.6; }
+</style>
+</head>
+<body>
+
+<nav>
+  <div class="logo"><a href="index.html">Backend Learning Hub</a><span>IT Project Management</span></div>
+  <div class="section-label">Lessons</div>
+  <a href="01-architecture.html"><span class="num">01</span> Architecture</a>
+  <a href="02-request-lifecycle.html"><span class="num">02</span> Request Lifecycle</a>
+  <a href="03-entry-point.html"><span class="num">03</span> Entry Point</a>
+  <a href="04-middleware.html"><span class="num">04</span> Middleware</a>
+  <a href="05-routes.html"><span class="num">05</span> Routes Layer</a>
+  <a href="06-services.html"><span class="num">06</span> Services Layer</a>
+  <a href="07-repositories.html"><span class="num">07</span> Repositories Layer</a>
+  <a href="08-helpers-utils.html"><span class="num">08</span> Helpers & Utils</a>
+  <a href="09-auth-deep-dive.html"><span class="num">09</span> Auth Deep Dive</a>
+  <a href="10-complete-walkthrough.html"><span class="num">10</span> Complete Walkthrough</a>
+  <a href="11-database.html"><span class="num">11</span> Database & Schema</a>
+  <a href="12-tests.html" class="active"><span class="num">12</span> Testing</a>
+</nav>
+
+<main>
+  <h1>🧪 Testing</h1>
+  <p class="subtitle">The test suite verifies that the backend works correctly without you having to manually click through everything. There are 5 test files, each focused on one concern. This lesson explains the tools, the structure, and every test.</p>
+
+  <h2>The Two Testing Tools</h2>
+  <div class="concept-grid">
+    <div class="concept-box">
+      <h4>Jest</h4>
+      <p>The test runner and assertion library. It finds <code>*.test.js</code> files, runs them, and reports which tests passed or failed. Provides <code>test()</code>, <code>expect()</code>, <code>describe()</code>, <code>beforeAll()</code>, etc.</p>
+    </div>
+    <div class="concept-box">
+      <h4>Supertest</h4>
+      <p>Makes real HTTP requests against your Express app <em>in memory</em>. No network port is opened — it connects directly to the Express instance. Fast, isolated, no server needed.</p>
+    </div>
+  </div>
+
+  <pre><code><span class="cmt">// How Supertest works — one line to make a request and get the response</span>
+<span class="kw">const</span> request = <span class="fn">require</span>(<span class="str">'supertest'</span>);
+<span class="kw">const</span> app = <span class="fn">require</span>(<span class="str">'../src/app'</span>);  <span class="cmt">// no server.js — just the Express app</span>
+
+<span class="kw">const</span> res = <span class="kw">await</span> request(app)
+  .<span class="fn">post</span>(<span class="str">'/api/auth/login'</span>)
+  .<span class="fn">send</span>({ username: <span class="str">'ali'</span>, password: <span class="str">'secret'</span> });
+
+expect(res.status).<span class="fn">toBe</span>(<span class="num">200</span>);</code></pre>
+
+  <h2>Run Command</h2>
+  <pre><code>npm test          <span class="cmt"># runs: jest --runInBand</span>
+<span class="cmt"># --runInBand means: run test files one at a time (sequential)
+# Without it, files could run in parallel and share database state → chaos</span></code></pre>
+
+  <h2>tests/helpers.js — The Shared Setup</h2>
+  <p>File: <code>tests/helpers.js</code></p>
+  <p>Every test file needs: an isolated database, an Express app connected to it, and a way to create users and tokens. This helper provides all three.</p>
+
+  <pre><code><span class="cmt">// ── setupTestApp() ─────────────────────────────────────────────
+// Creates a completely fresh, isolated environment for one test file.</span>
+<span class="kw">function</span> <span class="fn">setupTestApp</span>() {
+  <span class="cmt">// 1. Clear Node's module cache. Without this, all test files would share
+  //    the same db connection (the first require() is cached forever).</span>
+  jest.<span class="fn">resetModules</span>();
+
+  <span class="cmt">// 2. Create a temp directory with a unique name (e.g. /tmp/it-pm-test-a3f2/)
+  //    so each test file's database never collides with another's.</span>
+  <span class="kw">const</span> tmpDir = fs.<span class="fn">mkdtempSync</span>(path.<span class="fn">join</span>(os.<span class="fn">tmpdir</span>(), <span class="str">'it-pm-test-'</span>));
+  process.env.DATA_DIR = tmpDir;
+
+  <span class="cmt">// 3. Re-require app and db (fresh, pointing to the temp dir)</span>
+  <span class="kw">const</span> app = <span class="fn">require</span>(<span class="str">'../src/app'</span>);
+  <span class="kw">const</span> db = <span class="fn">require</span>(<span class="str">'../src/db/schema'</span>);
+  <span class="kw">const</span> { JWT_SECRET } = <span class="fn">require</span>(<span class="str">'../src/middleware/auth'</span>);
+  <span class="kw">const</span> jwt = <span class="fn">require</span>(<span class="str">'jsonwebtoken'</span>);
+
+  <span class="kw">return</span> { app, db, jwt, JWT_SECRET };
+}
+
+<span class="cmt">// ── seedUser() ─────────────────────────────────────────────────
+// Inserts a user directly into the database, bypassing the API.
+// WHY: creating users via POST /api/users requires an admin token,
+// which creates a circular dependency in auth tests.
+// bcrypt cost=1 is used (instead of 10) so tests don't slow down from hashing.</span>
+<span class="kw">function</span> <span class="fn">seedUser</span>(db, { username, password = <span class="str">'testpass123'</span>, role, section_id = <span class="kw">null</span> }) {
+  <span class="kw">const</span> hash = bcrypt.<span class="fn">hashSync</span>(password, <span class="num">1</span>);  <span class="cmt">// cost=1, fast for tests</span>
+  <span class="kw">const</span> result = db.<span class="fn">prepare</span>(<span class="str">'INSERT INTO users (username, password_hash, role, section_id) VALUES (?, ?, ?, ?)'</span>)
+    .<span class="fn">run</span>(username, hash, role, section_id);
+  <span class="kw">return</span> result.lastInsertRowid;
+}
+
+<span class="cmt">// ── makeToken() ────────────────────────────────────────────────
+// Signs a JWT directly, without going through POST /api/auth/login.
+// WHY: most tests need an authenticated user but aren't testing the login flow.
+// Bypassing login is faster and keeps tests independent of the auth code.</span>
+<span class="kw">function</span> <span class="fn">makeToken</span>(jwt, JWT_SECRET, { id, username, role, section_id = <span class="kw">null</span> }) {
+  <span class="kw">return</span> jwt.<span class="fn">sign</span>({ id, username, role, section_id }, JWT_SECRET);
+}</code></pre>
+
+  <div class="callout tip"><div class="callout-icon"></div><p><strong>The key insight:</strong> Each test file calls <code>setupTestApp()</code> in <code>beforeAll()</code>, which resets the module cache and creates a new database in a temp folder. This means the 5 test files never interfere with each other, even if they run sequentially and share the same Node process.</p></div>
+
+  <h2>Jest API Reference</h2>
+  <table>
+    <tr><th>Function</th><th>What it does</th></tr>
+    <tr><td>test('name', fn)</td><td>Defines one test. Passes if fn throws no errors.</td></tr>
+    <tr><td>describe('group', fn)</td><td>Groups related tests under a label. Shown in output.</td></tr>
+    <tr><td>beforeAll(fn)</td><td>Runs fn once before any test in the file.</td></tr>
+    <tr><td>beforeEach(fn)</td><td>Runs fn before every individual test.</td></tr>
+    <tr><td>expect(value).toBe(x)</td><td>Strict equality (===)</td></tr>
+    <tr><td>expect(value).toEqual(x)</td><td>Deep equality (objects, arrays)</td></tr>
+    <tr><td>expect(value).toHaveProperty(key)</td><td>Object has a property with that key</td></tr>
+    <tr><td>expect(value).toMatchObject(subset)</td><td>Object contains at least these key-value pairs</td></tr>
+    <tr><td>expect(value).toContain(x)</td><td>Array includes x</td></tr>
+    <tr><td>expect(value).not.toContain(x)</td><td>Array does NOT include x</td></tr>
+    <tr><td>expect(value).toBeNull()</td><td>Value is strictly null</td></tr>
+    <tr><td>expect(value).toHaveLength(n)</td><td>Array/string has exactly n elements/chars</td></tr>
+    <tr><td>expect(value).toBeGreaterThanOrEqual(n)</td><td>Value ≥ n</td></tr>
+  </table>
+
+  <h2>The Five Test Files</h2>
+
+  <div class="test-file">
+    <div class="test-file-header">
+      <h3>auth.test.js</h3>
+      <div class="desc">Tests for login, logout, /me, and change-password flows</div>
+      <div class="test-count">9 tests</div>
+    </div>
+    <div class="test-list">
+      <ul>
+        <li>Login with correct credentials returns token and user</li>
+        <li>Login with wrong password returns 401</li>
+        <li>Login with unknown username returns 401 (not 404 — no username enumeration)</li>
+        <li>Login with missing password returns 400</li>
+        <li>Login with disabled account returns 403</li>
+        <li>GET /me without token returns 401</li>
+        <li>GET /me with valid token returns user info</li>
+        <li>GET /me with invalid (tampered) token returns 401</li>
+      </ul>
+    </div>
+  </div>
+
+  <pre><code><span class="cmt">// From auth.test.js — the two-step login-then-use-token test:</span>
+test(<span class="str">'GET /me with valid token returns user info'</span>, <span class="kw">async</span> () =&gt; {
+  <span class="cmt">// Step 1: actually log in to get a real token</span>
+  <span class="kw">const</span> loginRes = <span class="kw">await</span> <span class="fn">request</span>(app)
+    .<span class="fn">post</span>(<span class="str">'/api/auth/login'</span>)
+    .<span class="fn">send</span>({ username: <span class="str">'active_user'</span>, password: <span class="str">'correct123'</span> });
+  <span class="kw">const</span> token = loginRes.body.token;
+
+  <span class="cmt">// Step 2: use the token in the Authorization header</span>
+  <span class="kw">const</span> res = <span class="kw">await</span> <span class="fn">request</span>(app)
+    .<span class="fn">get</span>(<span class="str">'/api/auth/me'</span>)
+    .<span class="fn">set</span>(<span class="str">'Authorization'</span>, <span class="str">`Bearer <span class="var">${token}</span>`</span>);
+
+  expect(res.status).<span class="fn">toBe</span>(<span class="num">200</span>);
+  expect(res.body).<span class="fn">toMatchObject</span>({ username: <span class="str">'active_user'</span>, role: <span class="str">'super_admin'</span> });
+});</code></pre>
+
+  <div class="test-file">
+    <div class="test-file-header">
+      <h3>roles.test.js</h3>
+      <div class="desc">Permission matrix — verifies each role can only access what it's supposed to</div>
+      <div class="test-count">29 tests</div>
+    </div>
+    <div class="test-list">
+      <ul>
+        <li>super_admin and section_head can create projects; it_head, purchase_admin, tender_admin, contract_admin are blocked (403)</li>
+        <li>purchase_admin, it_head, section_head can list purchases; tender_admin and contract_admin cannot</li>
+        <li>Only purchase_admin and super_admin can create purchases</li>
+        <li>tender_admin can read/create tenders; purchase_admin and contract_admin cannot</li>
+        <li>contract_admin can read/create contracts; purchase_admin and tender_admin cannot</li>
+        <li>Only super_admin can create/manage sections</li>
+        <li>Only super_admin can list and create users</li>
+      </ul>
+    </div>
+  </div>
+
+  <pre><code><span class="cmt">// From roles.test.js — the authed() helper keeps each test one line</span>
+<span class="kw">function</span> <span class="fn">authed</span>(method, url, role) {
+  <span class="kw">return</span> <span class="fn">request</span>(app)[method](url).<span class="fn">set</span>(<span class="str">'Authorization'</span>, <span class="str">`Bearer <span class="var">${tokens[role]}</span>`</span>);
+}
+
+describe(<span class="str">'Projects – create'</span>, () =&gt; {
+  test(<span class="str">'super_admin can create a project'</span>, <span class="kw">async</span> () =&gt; {
+    <span class="kw">const</span> res = <span class="kw">await</span> <span class="fn">authed</span>(<span class="str">'post'</span>, <span class="str">'/api/projects'</span>, <span class="str">'super_admin'</span>)
+      .<span class="fn">send</span>({ title: <span class="str">'Test Project'</span>, section_id: <span class="num">1</span> });
+    expect(res.status).<span class="fn">toBe</span>(<span class="num">201</span>);
+  });
+
+  test(<span class="str">'it_head cannot create a project'</span>, <span class="kw">async</span> () =&gt; {
+    <span class="kw">const</span> res = <span class="kw">await</span> <span class="fn">authed</span>(<span class="str">'post'</span>, <span class="str">'/api/projects'</span>, <span class="str">'it_head'</span>)
+      .<span class="fn">send</span>({ title: <span class="str">'Denied'</span>, section_id: <span class="num">1</span> });
+    expect(res.status).<span class="fn">toBe</span>(<span class="num">403</span>);
+  });
+});</code></pre>
+
+  <div class="test-file">
+    <div class="test-file-header">
+      <h3>soft-delete.test.js</h3>
+      <div class="desc">Verifies the 10-minute deletion window and soft-delete visibility</div>
+      <div class="test-count">4 tests</div>
+    </div>
+    <div class="test-list">
+      <ul>
+        <li>A fresh project (just created) can be deleted — returns 200, row still exists with is_deleted=1</li>
+        <li>A project aged 11 minutes cannot be deleted — returns 409 "older_than_10_min"</li>
+        <li>A soft-deleted project does not appear in GET /api/projects</li>
+        <li>A project aged 9 minutes (boundary) can still be deleted</li>
+      </ul>
+    </div>
+  </div>
+
+  <pre><code><span class="cmt">// From soft-delete.test.js — time travel trick:
+// Can't wait 10 real minutes in a test, so we manipulate the DB directly</span>
+<span class="kw">function</span> <span class="fn">ageProject</span>(projectId, minutesAgo) {
+  db.<span class="fn">prepare</span>(
+    <span class="str">`UPDATE projects SET created_at = datetime('now', '-<span class="var">${minutesAgo}</span> minutes') WHERE id = ?`</span>
+  ).<span class="fn">run</span>(projectId);
+}
+
+test(<span class="str">'project older than 10 minutes cannot be deleted'</span>, <span class="kw">async</span> () =&gt; {
+  <span class="kw">const</span> id = <span class="kw">await</span> <span class="fn">createProject</span>(<span class="str">'Old Project'</span>);
+  <span class="fn">ageProject</span>(id, <span class="num">11</span>);  <span class="cmt">// simulate 11 minutes ago</span>
+
+  <span class="kw">const</span> res = <span class="kw">await</span> <span class="fn">request</span>(app)
+    .<span class="fn">delete</span>(<span class="str">`/api/projects/<span class="var">${id}</span>`</span>)
+    .<span class="fn">set</span>(<span class="str">'Authorization'</span>, <span class="str">`Bearer <span class="var">${token}</span>`</span>);
+
+  expect(res.status).<span class="fn">toBe</span>(<span class="num">409</span>);
+  expect(res.body.error).<span class="fn">toBe</span>(<span class="str">'older_than_10_min'</span>);
+
+  <span class="cmt">// White-box check: verify the row is still NOT deleted in the DB</span>
+  <span class="kw">const</span> row = db.<span class="fn">prepare</span>(<span class="str">'SELECT is_deleted FROM projects WHERE id = ?'</span>).<span class="fn">get</span>(id);
+  expect(row.is_deleted).<span class="fn">toBe</span>(<span class="num">0</span>);
+});</code></pre>
+
+  <div class="callout info"><div class="callout-icon"></div><p><strong>White-box vs black-box testing:</strong> A <em>black-box</em> test only looks at what the API returns. A <em>white-box</em> test also queries the database directly to verify what was written. The soft-delete test uses white-box to confirm that "soft" means the row still exists (not physically deleted).</p></div>
+
+  <div class="test-file">
+    <div class="test-file-header">
+      <h3>audit-trail.test.js</h3>
+      <div class="desc">Verifies that status changes are correctly recorded in status_history</div>
+      <div class="test-count">5 tests</div>
+    </div>
+    <div class="test-list">
+      <ul>
+        <li>Creating a project writes an initial status_history row (from_status=null, to_status='not_started')</li>
+        <li>Changing a project's status adds a new history row with the old and new values</li>
+        <li>Multiple status changes accumulate — history is never overwritten</li>
+        <li>Updating a project WITHOUT changing status does NOT add a history row (no-op skipped)</li>
+        <li>GET /:id/history returns rows newest-first, with changed_by_username joined in</li>
+      </ul>
+    </div>
+  </div>
+
+  <pre><code><span class="cmt">// From audit-trail.test.js — queries DB directly to count history rows</span>
+<span class="kw">function</span> <span class="fn">getHistory</span>(projectId) {
+  <span class="kw">return</span> db.<span class="fn">prepare</span>(<span class="str">'SELECT * FROM status_history WHERE entity_type = ? AND entity_id = ? ORDER BY id'</span>)
+    .<span class="fn">all</span>(<span class="str">'project'</span>, projectId);
+}
+
+test(<span class="str">'each status change appends a new row — history accumulates'</span>, <span class="kw">async</span> () =&gt; {
+  <span class="kw">const</span> project = <span class="kw">await</span> <span class="fn">createProject</span>(<span class="str">'Many Changes'</span>, <span class="str">'not_started'</span>);
+
+  <span class="kw">for</span> (<span class="kw">const</span> status <span class="kw">of</span> [<span class="str">'in_progress'</span>, <span class="str">'on_hold'</span>, <span class="str">'completed'</span>]) {
+    <span class="kw">await</span> <span class="fn">request</span>(app)
+      .<span class="fn">put</span>(<span class="str">`/api/projects/<span class="var">${project.id}</span>`</span>)
+      .<span class="fn">set</span>(<span class="str">'Authorization'</span>, <span class="str">`Bearer <span class="var">${token}</span>`</span>)
+      .<span class="fn">send</span>({ status });
+  }
+
+  <span class="kw">const</span> history = <span class="fn">getHistory</span>(project.id);
+  expect(history).<span class="fn">toHaveLength</span>(<span class="num">4</span>);  <span class="cmt">// 1 creation + 3 changes</span>
+  expect(history[<span class="num">3</span>].to_status).<span class="fn">toBe</span>(<span class="str">'completed'</span>);
+});</code></pre>
+
+  <div class="test-file">
+    <div class="test-file-header">
+      <h3>section-isolation.test.js</h3>
+      <div class="desc">Verifies that section_head users cannot touch another section's data</div>
+      <div class="test-count">10 tests</div>
+    </div>
+    <div class="test-list">
+      <ul>
+        <li>section_head A only sees their own section's projects in GET /api/projects</li>
+        <li>section_head B only sees their own section's projects</li>
+        <li>section_head A can update their own project (200)</li>
+        <li>section_head A cannot update section B's project (403)</li>
+        <li>section_head A cannot delete section B's project (403)</li>
+        <li>section_head A can delete their own project (200)</li>
+        <li>section_head A can archive their own task (200)</li>
+        <li>section_head A cannot archive section B's task (403)</li>
+        <li>section_head A can update their own task (200)</li>
+        <li>section_head A cannot update section B's task (403)</li>
+      </ul>
+    </div>
+  </div>
+
+  <pre><code><span class="cmt">// From section-isolation.test.js — two heads, two sections, cross-pollinate</span>
+<span class="cmt">// beforeAll creates: headA (section 1), headB (section 2), and a project in each</span>
+
+test(<span class="str">'section_head A cannot update section B project'</span>, <span class="kw">async</span> () =&gt; {
+  <span class="kw">const</span> res = <span class="kw">await</span> <span class="fn">request</span>(app)
+    .<span class="fn">put</span>(<span class="str">`/api/projects/<span class="var">${projectInB}</span>`</span>)
+    .<span class="fn">set</span>(<span class="str">'Authorization'</span>, <span class="str">`Bearer <span class="var">${tokenA}</span>`</span>)  <span class="cmt">// ← A's token, B's project</span>
+    .<span class="fn">send</span>({ title: <span class="str">'Should be denied'</span> });
+
+  expect(res.status).<span class="fn">toBe</span>(<span class="num">403</span>);  <span class="cmt">// service checks section_id mismatch</span>
+});</code></pre>
+
+  <h2>Testing Concepts You'll Meet Everywhere</h2>
+
+  <h3>async / await in tests</h3>
+  <p>HTTP requests are asynchronous. Without <code>await</code>, the test would check the result before the request finished.</p>
+  <pre><code><span class="cmt">// ❌ Wrong — res is a Promise, not the actual response</span>
+test(<span class="str">'...'</span>, () =&gt; {
+  <span class="kw">const</span> res = <span class="fn">request</span>(app).<span class="fn">get</span>(<span class="str">'/api/projects'</span>);
+  expect(res.status).<span class="fn">toBe</span>(<span class="num">200</span>);  <span class="cmt">// fails! res.status is undefined</span>
+});
+
+<span class="cmt">// ✅ Correct — await pauses until the HTTP response arrives</span>
+test(<span class="str">'...'</span>, <span class="kw">async</span> () =&gt; {
+  <span class="kw">const</span> res = <span class="kw">await</span> <span class="fn">request</span>(app).<span class="fn">get</span>(<span class="str">'/api/projects'</span>);
+  expect(res.status).<span class="fn">toBe</span>(<span class="num">200</span>);  <span class="cmt">// correct!</span>
+});</code></pre>
+
+  <h3>makeToken vs real login</h3>
+  <p>Most tests use <code>makeToken()</code> to get a JWT without going through the login endpoint. This keeps tests focused on what they're actually testing, not on the login flow.</p>
+  <pre><code><span class="cmt">// Only auth.test.js uses the real login — because IT is testing the login flow.
+// All other test files use makeToken() directly:</span>
+token = <span class="fn">makeToken</span>(jwt, JWT_SECRET, { id, username: <span class="str">'admin'</span>, role: <span class="str">'super_admin'</span> });
+
+<span class="cmt">// Then attach it on requests:</span>
+.<span class="fn">set</span>(<span class="str">'Authorization'</span>, <span class="str">`Bearer <span class="var">${token}</span>`</span>)</code></pre>
+
+  <h3>Test Isolation — Why It Matters</h3>
+  <p>If test A creates a record and test B depends on that record existing, then test B fails whenever it runs alone. Good tests are independent. Notice in section-isolation.test.js:</p>
+  <pre><code><span class="cmt">// The delete test creates its OWN project to delete,
+// instead of deleting projectInA (which other tests might need)</span>
+test(<span class="str">'section_head A can delete their own project'</span>, <span class="kw">async</span> () =&gt; {
+  <span class="cmt">// Create a fresh project just for this test</span>
+  <span class="kw">const</span> created = <span class="kw">await</span> <span class="fn">request</span>(app)
+    .<span class="fn">post</span>(<span class="str">'/api/projects'</span>)
+    .<span class="fn">set</span>(<span class="str">'Authorization'</span>, <span class="str">`Bearer <span class="var">${tokenA}</span>`</span>)
+    .<span class="fn">send</span>({ title: <span class="str">'To be deleted by A'</span> });
+  <span class="cmt">// ↑ not reusing projectInA, because deleting it would break visibility tests</span>
+  ...
+});</code></pre>
+
+  <h2>How to Add a New Test</h2>
+  <p>Pick the right file for the feature you're testing, then add a <code>test()</code> call:</p>
+  <pre><code><span class="cmt">// Example: testing that archiving a project hides it from default listing</span>
+test(<span class="str">'archived project does not appear without archived=1 param'</span>, <span class="kw">async</span> () =&gt; {
+  <span class="cmt">// 1. Create a project</span>
+  <span class="kw">const</span> createRes = <span class="kw">await</span> <span class="fn">request</span>(app)
+    .<span class="fn">post</span>(<span class="str">'/api/projects'</span>)
+    .<span class="fn">set</span>(<span class="str">'Authorization'</span>, <span class="str">`Bearer <span class="var">${token}</span>`</span>)
+    .<span class="fn">send</span>({ title: <span class="str">'To Archive'</span>, section_id: <span class="num">1</span> });
+  <span class="kw">const</span> id = createRes.body.id;
+
+  <span class="cmt">// 2. Archive it</span>
+  <span class="kw">await</span> <span class="fn">request</span>(app)
+    .<span class="fn">patch</span>(<span class="str">`/api/projects/<span class="var">${id}</span>/archive`</span>)
+    .<span class="fn">set</span>(<span class="str">'Authorization'</span>, <span class="str">`Bearer <span class="var">${token}</span>`</span>)
+    .<span class="fn">send</span>({ archive: <span class="kw">true</span> });
+
+  <span class="cmt">// 3. List without archived=1 — should not appear</span>
+  <span class="kw">const</span> res = <span class="kw">await</span> <span class="fn">request</span>(app)
+    .<span class="fn">get</span>(<span class="str">'/api/projects'</span>)
+    .<span class="fn">set</span>(<span class="str">'Authorization'</span>, <span class="str">`Bearer <span class="var">${token}</span>`</span>);
+
+  expect(res.body.<span class="fn">map</span>(p =&gt; p.id)).<span class="fn">not</span>.<span class="fn">toContain</span>(id);
+});</code></pre>
+
+  <div class="page-nav">
+    <a href="11-database.html">← Database & Schema</a>
+    <a href="index.html">← Back to Home</a>
+  </div>
+</main>
+</body>
+</html>

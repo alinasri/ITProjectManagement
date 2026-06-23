@@ -1,0 +1,192 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Lesson 02 — Request Lifecycle</title>
+<link rel="stylesheet" href="_shared.css">
+</head>
+<body>
+
+<nav>
+  <div class="logo"><a href="index.html">Backend Learning Hub</a><span>IT Project Management</span></div>
+  <div class="section-label">Lessons</div>
+  <a href="01-architecture.html"><span class="num">01</span> Architecture</a>
+  <a href="02-request-lifecycle.html" class="active"><span class="num">02</span> Request Lifecycle</a>
+  <a href="03-entry-point.html"><span class="num">03</span> Entry Point</a>
+  <a href="04-middleware.html"><span class="num">04</span> Middleware</a>
+  <a href="05-routes.html"><span class="num">05</span> Routes Layer</a>
+  <a href="06-services.html"><span class="num">06</span> Services Layer</a>
+  <a href="07-repositories.html"><span class="num">07</span> Repositories Layer</a>
+  <a href="08-helpers-utils.html"><span class="num">08</span> Helpers & Utils</a>
+  <a href="09-auth-deep-dive.html"><span class="num">09</span> Auth Deep Dive</a>
+  <a href="10-complete-walkthrough.html"><span class="num">10</span> Complete Walkthrough</a>
+  <a href="11-database.html"><span class="num">11</span> Database & Schema</a>
+  <a href="12-tests.html"><span class="num">12</span> Testing</a>
+</nav>
+
+<main>
+  <h1>🔄 Request Lifecycle</h1>
+  <p class="subtitle">Let's follow one real request from the browser all the way to the database and back. Understanding this flow means understanding the entire backend.</p>
+
+  <h2>The Scenario</h2>
+  <p>The frontend calls: <strong>GET /api/projects?section_id=2</strong></p>
+  <p>The user is logged in. They want to see all projects for section 2. Here's every single thing that happens.</p>
+
+  <h2>Step-by-Step Flow</h2>
+
+  <h3>Step 1 — The Browser Sends an HTTP Request</h3>
+  <p>The browser (or frontend app) sends a network packet to <code>localhost:3000</code>. It looks like this:</p>
+  <pre><code>GET /api/projects?section_id=2 HTTP/1.1
+Host: localhost:3000
+Cookie: token=eyJhbGciOiJIUzI1NiJ9...  ← the JWT stored in a cookie</code></pre>
+  <div class="callout info"><div class="callout-icon"></div><p><strong>HTTP is just text.</strong> A request is a text message sent over a network connection. Express reads it and turns it into a JavaScript object called <code>req</code>.</p></div>
+
+  <h3>Step 2 — Node.js Receives It</h3>
+  <p><code>server.js</code> is listening on port 3000. When a connection arrives, Node calls the Express <code>app</code> object, which starts running middleware in order.</p>
+
+  <h3>Step 3 — Global Middleware Runs (app.js)</h3>
+  <p>Before any route handler runs, Express passes the request through three global middleware functions configured in <code>app.js</code>:</p>
+
+  <table>
+    <tr><th>Middleware</th><th>What it does</th><th>Result on req</th></tr>
+    <tr><td>cors()</td><td>Adds CORS headers so the browser allows cross-origin requests</td><td>adds response headers</td></tr>
+    <tr><td>express.json()</td><td>Reads the request body (if any) and parses JSON</td><td>populates <code>req.body</code></td></tr>
+    <tr><td>cookieParser()</td><td>Reads the Cookie header</td><td>populates <code>req.cookies</code></td></tr>
+  </table>
+
+  <h3>Step 4 — Route Matching</h3>
+  <p>Express checks every mounted route group until it finds a match for <code>/api/projects</code>. In <code>app.js</code>:</p>
+  <pre><code>app.use('/api/projects', require('./routes/projects'));</code></pre>
+  <p>Express strips <code>/api/projects</code> and passes the request to the projects router, where it matches <code>GET /</code>:</p>
+  <pre><code><span class="cmt">// src/routes/projects.js</span>
+router.get('/', requireAuth, wrap(<span class="num">200</span>, req =&gt; projectService.list(req.user, req.query)));</code></pre>
+
+  <h3>Step 5 — Route-Level Middleware: requireAuth</h3>
+  <p>Before the route handler runs, <code>requireAuth</code> middleware executes. It:</p>
+  <ol>
+    <li>Looks for a JWT in <code>req.cookies.token</code></li>
+    <li>Calls <code>jwt.verify(token, JWT_SECRET)</code> — this checks the cryptographic signature and expiry</li>
+    <li>Queries the database to make sure the account isn't disabled</li>
+    <li>Sets <code>req.user = { id, username, role, section_id }</code></li>
+    <li>Calls <code>next()</code> to proceed</li>
+  </ol>
+  <div class="callout warn"><div class="callout-icon"></div><p>If the token is missing, expired, or the account is disabled, <code>requireAuth</code> sends <code>401 Unauthorized</code> and the request stops here. The route handler never runs.</p></div>
+
+  <h3>Step 6 — The Route Handler Calls the Service</h3>
+  <p>The <code>wrap()</code> utility runs the inner function and catches errors. It calls:</p>
+  <pre><code>projectService.list(req.user, req.query)
+<span class="cmt">// req.user  → { id: 5, username: 'ali', role: 'section_head', section_id: 2 }
+// req.query → { section_id: '2' }</span></code></pre>
+
+  <h3>Step 7 — Service Applies Business Rules</h3>
+  <p>Inside <code>projectService.list()</code>:</p>
+  <pre><code><span class="kw">function</span> <span class="fn">list</span>(user, { section_id, archived }) {
+  <span class="kw">const</span> showArchived = archived === <span class="str">'1'</span> ? <span class="num">1</span> : <span class="num">0</span>;
+
+  <span class="cmt">// Business rule: section_head can ONLY see their own section</span>
+  <span class="kw">const</span> sectionId = user.role === <span class="str">'section_head'</span>
+    ? user.section_id          <span class="cmt">// forced to their section</span>
+    : section_id;              <span class="cmt">// admins can pass any section_id</span>
+
+  <span class="kw">return</span> projectRepo.enrich(projectRepo.findAll({ sectionId, showArchived }));
+}</code></pre>
+
+  <h3>Step 8 — Repository Runs SQL</h3>
+  <p>The repository receives plain values and executes prepared SQL statements:</p>
+  <pre><code><span class="cmt">// Prepared statement (compiled once at startup)</span>
+findBySection: db.prepare(<span class="str">'SELECT * FROM projects WHERE section_id = ? AND is_archived = ? AND is_deleted = 0 ORDER BY row_order, id'</span>)
+
+<span class="cmt">// At call time, bind the actual values</span>
+findBySection.all(<span class="num">2</span>, <span class="num">0</span>)  <span class="cmt">// → returns array of plain JS objects (rows)</span></code></pre>
+
+  <h3>Step 9 — Repository Enriches the Data</h3>
+  <p>The raw rows don't include the list of responsible people or custom field values. The <code>enrich()</code> function runs two more SQL queries (one for responsibles, one for custom values) and attaches them to each project. This avoids N+1 queries (explained fully in Lesson 07).</p>
+  <pre><code><span class="cmt">// Returns: Array of project objects, each with extra fields:</span>
+[
+  {
+    id: <span class="num">1</span>, title: <span class="str">'Network Upgrade'</span>, status: <span class="str">'in_progress'</span>,
+    responsibles: [{ id: <span class="num">3</span>, name: <span class="str">'Sara'</span> }],    <span class="cmt">← added by enrich()</span>
+    custom_values: [{ column_id: <span class="num">1</span>, value: <span class="str">'High'</span> }]  <span class="cmt">← added by enrich()</span>
+  },
+  ...
+]</code></pre>
+
+  <h3>Step 10 — Data Returns Up the Stack</h3>
+  <p>The enriched array bubbles back up: repository → service → route handler. The <code>wrap()</code> utility catches the return value and sends it as JSON:</p>
+  <pre><code>res.status(<span class="num">200</span>).json([{ id: <span class="num">1</span>, title: <span class="str">'Network Upgrade'</span>, ... }, ...])</code></pre>
+
+  <h3>Step 11 — The Browser Receives the Response</h3>
+  <pre><code>HTTP/1.1 200 OK
+Content-Type: application/json
+
+[{"id":1,"title":"Network Upgrade","status":"in_progress","responsibles":[...]}]</code></pre>
+
+  <h2>The Complete Flow Visualized</h2>
+  <div class="diagram">Browser
+  │
+  │  GET /api/projects?section_id=2
+  │  Cookie: token=eyJ...
+  ▼
+Node.js (port 3000)
+  │
+  ├─ <span class="hl">cors()</span>              adds CORS headers
+  ├─ <span class="hl">express.json()</span>      populates req.body
+  ├─ <span class="hl">cookieParser()</span>      populates req.cookies
+  │
+  ├─ Route match: GET /api/projects → routes/projects.js
+  │
+  ├─ <span class="hl">requireAuth</span>         verifies JWT, sets req.user
+  │
+  ├─ <span class="hl">wrap(200, fn)</span>       catches errors, sends response
+  │
+  ├─ <span class="hl">projectService.list()</span>
+  │    applies business rules (section_head restriction)
+  │
+  ├─ <span class="hl">projectRepo.findAll()</span>
+  │    runs: SELECT * FROM projects WHERE section_id = 2
+  │
+  ├─ <span class="hl">projectRepo.enrich()</span>
+  │    runs: SELECT responsibles for all projects (1 query)
+  │    runs: SELECT custom_values for all projects (1 query)
+  │
+  └─ <span class="hl">res.status(200).json([...])</span>
+       sends HTTP response with JSON body
+  │
+  ▼
+Browser receives: [{"id":1,"title":"Network Upgrade",...}]</div>
+
+  <h2>What Happens When Something Goes Wrong?</h2>
+  <p>At any step, if an error is thrown:</p>
+  <pre><code><span class="cmt">// In a service:</span>
+<span class="kw">if</span> (!project) <span class="kw">throw new</span> <span class="fn">ServiceError</span>(<span class="num">404</span>, <span class="str">'Project not found'</span>);
+
+<span class="cmt">// wrap() catches it:</span>
+<span class="kw">function</span> <span class="fn">wrap</span>(statusCode, fn) {
+  <span class="kw">return</span> (req, res) =&gt; {
+    <span class="kw">try</span> {
+      res.status(statusCode).json(fn(req));
+    } <span class="kw">catch</span> (err) {
+      res.status(err.status || <span class="num">500</span>).json({ error: err.message });
+      <span class="cmt">// sends: HTTP 404 { "error": "Project not found" }</span>
+    }
+  };
+}</code></pre>
+
+  <h2>Key Terms to Remember</h2>
+  <table>
+    <tr><th>Term</th><th>What it means</th></tr>
+    <tr><td>req</td><td>The request object — contains everything the browser sent (body, params, cookies, user)</td></tr>
+    <tr><td>res</td><td>The response object — methods to send data back (res.json, res.status, res.cookie)</td></tr>
+    <tr><td>next()</td><td>Tells Express to proceed to the next middleware in the chain</td></tr>
+    <tr><td>middleware</td><td>A function that runs between request and handler, either calls next() or ends the request</td></tr>
+    <tr><td>route handler</td><td>The final function that processes the request and sends a response</td></tr>
+  </table>
+
+  <div class="page-nav">
+    <a href="01-architecture.html">← Architecture</a>
+    <a href="03-entry-point.html">Next: Entry Point →</a>
+  </div>
+</main>
+</body>
+</html>

@@ -1,0 +1,212 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Lesson 05 — Routes Layer</title>
+<link rel="stylesheet" href="_shared.css">
+</head>
+<body>
+
+<nav>
+  <div class="logo"><a href="index.html">Backend Learning Hub</a><span>IT Project Management</span></div>
+  <div class="section-label">Lessons</div>
+  <a href="01-architecture.html"><span class="num">01</span> Architecture</a>
+  <a href="02-request-lifecycle.html"><span class="num">02</span> Request Lifecycle</a>
+  <a href="03-entry-point.html"><span class="num">03</span> Entry Point</a>
+  <a href="04-middleware.html"><span class="num">04</span> Middleware</a>
+  <a href="05-routes.html" class="active"><span class="num">05</span> Routes Layer</a>
+  <a href="06-services.html"><span class="num">06</span> Services Layer</a>
+  <a href="07-repositories.html"><span class="num">07</span> Repositories Layer</a>
+  <a href="08-helpers-utils.html"><span class="num">08</span> Helpers & Utils</a>
+  <a href="09-auth-deep-dive.html"><span class="num">09</span> Auth Deep Dive</a>
+  <a href="10-complete-walkthrough.html"><span class="num">10</span> Complete Walkthrough</a>
+  <a href="11-database.html"><span class="num">11</span> Database & Schema</a>
+  <a href="12-tests.html"><span class="num">12</span> Testing</a>
+</nav>
+
+<main>
+  <h1>🗺️ Routes Layer</h1>
+  <p class="subtitle">Routes define the surface area of your API — which URLs exist, which HTTP methods they accept, who is allowed to access them, and what service function handles each one.</p>
+
+  <h2>HTTP Verbs — What They Mean</h2>
+  <p>HTTP requests always include a verb (method). Conventions:</p>
+  <table>
+    <tr><th>Verb</th><th>Meaning</th><th>Example</th></tr>
+    <tr><td>GET</td><td>Fetch data (read-only)</td><td>GET /api/projects — list projects</td></tr>
+    <tr><td>POST</td><td>Create a new resource</td><td>POST /api/projects — create project</td></tr>
+    <tr><td>PUT</td><td>Replace/update a resource (full update)</td><td>PUT /api/projects/5 — update project 5</td></tr>
+    <tr><td>PATCH</td><td>Partial update (change one field)</td><td>PATCH /api/projects/5/archive — toggle archive</td></tr>
+    <tr><td>DELETE</td><td>Remove a resource</td><td>DELETE /api/projects/5 — soft-delete project 5</td></tr>
+  </table>
+
+  <h2>Express Router</h2>
+  <p>Each route file creates an Express <code>Router</code> — a mini-app that handles a subset of URLs. The router is then mounted in <code>app.js</code> at a prefix:</p>
+  <pre><code><span class="cmt">// src/routes/projects.js</span>
+<span class="kw">const</span> express = <span class="fn">require</span>(<span class="str">'express'</span>);
+<span class="kw">const</span> router = express.<span class="fn">Router</span>();  <span class="cmt">// mini-app for /api/projects/*</span>
+
+<span class="cmt">// Define routes on the router, not on app directly</span>
+router.<span class="fn">get</span>(<span class="str">'/'</span>, ...);
+router.<span class="fn">post</span>(<span class="str">'/'</span>, ...);
+router.<span class="fn">put</span>(<span class="str">'/:id'</span>, ...);
+
+module.exports = router;  <span class="cmt">// exported so app.js can mount it</span></code></pre>
+  <pre><code><span class="cmt">// src/app.js</span>
+app.<span class="fn">use</span>(<span class="str">'/api/projects'</span>, <span class="fn">require</span>(<span class="str">'./routes/projects'</span>));
+<span class="cmt">// All routes in projects.js are now under /api/projects/</span></code></pre>
+
+  <h2>The Full Projects Router</h2>
+  <p>File: <code>src/routes/projects.js</code></p>
+
+  <pre><code><span class="kw">const</span> express = <span class="fn">require</span>(<span class="str">'express'</span>);
+<span class="kw">const</span> { requireAuth, requireRole } = <span class="fn">require</span>(<span class="str">'../middleware/auth'</span>);
+<span class="kw">const</span> projectService = <span class="fn">require</span>(<span class="str">'../services/projectService'</span>);
+<span class="kw">const</span> { wrap } = <span class="fn">require</span>(<span class="str">'../utils/routeUtils'</span>);
+
+<span class="kw">const</span> router = express.<span class="fn">Router</span>();
+
+<span class="cmt">// GET /api/projects?section_id=2&archived=0
+// → list all projects visible to this user</span>
+router.<span class="fn">get</span>(<span class="str">'/'</span>,
+  requireAuth,                               <span class="cmt">// ← must be logged in</span>
+  <span class="fn">wrap</span>(<span class="num">200</span>, req =&gt; projectService.<span class="fn">list</span>(req.user, req.query))
+);
+
+<span class="cmt">// POST /api/projects   body: { title, section_id, status, ... }
+// → create a new project</span>
+router.<span class="fn">post</span>(<span class="str">'/'</span>,
+  requireAuth,
+  <span class="fn">requireRole</span>(<span class="str">'super_admin'</span>, <span class="str">'section_head'</span>),  <span class="cmt">// ← only these roles</span>
+  <span class="fn">wrap</span>(<span class="num">201</span>, req =&gt; projectService.<span class="fn">create</span>(req.user, req.body))
+);
+
+<span class="cmt">// ⚠️ IMPORTANT: This must come BEFORE /:id
+// Otherwise Express would match "deadline-changes" as the :id parameter</span>
+router.<span class="fn">get</span>(<span class="str">'/deadline-changes'</span>,
+  requireAuth,
+  <span class="fn">requireRole</span>(<span class="str">'super_admin'</span>, <span class="str">'it_head'</span>),
+  <span class="fn">wrap</span>(<span class="num">200</span>, () =&gt; projectService.<span class="fn">getDeadlineChanges</span>())
+);
+
+<span class="cmt">// GET /api/projects/5/history
+// → audit trail for project 5</span>
+router.<span class="fn">get</span>(<span class="str">'/:id/history'</span>,
+  requireAuth,
+  <span class="fn">wrap</span>(<span class="num">200</span>, req =&gt; projectService.<span class="fn">getHistory</span>(req.params.id))
+);
+
+<span class="cmt">// PUT /api/projects/5   body: { title, status, ... }
+// → update project 5</span>
+router.<span class="fn">put</span>(<span class="str">'/:id'</span>,
+  requireAuth,
+  <span class="fn">requireRole</span>(<span class="str">'super_admin'</span>, <span class="str">'section_head'</span>),
+  <span class="fn">wrap</span>(<span class="num">200</span>, req =&gt; projectService.<span class="fn">update</span>(req.user, req.params.id, req.body))
+);
+
+<span class="cmt">// PATCH /api/projects/5/archive   body: { archive: true }
+// → archive or unarchive project 5</span>
+router.<span class="fn">patch</span>(<span class="str">'/:id/archive'</span>,
+  requireAuth,
+  <span class="fn">requireRole</span>(<span class="str">'super_admin'</span>, <span class="str">'section_head'</span>),
+  <span class="fn">wrap</span>(<span class="num">200</span>, req =&gt; projectService.<span class="fn">archive</span>(req.user, req.params.id, req.body.archive))
+);
+
+<span class="cmt">// DELETE /api/projects/5
+// → soft-delete project 5 (only within 10 minutes of creation)</span>
+router.<span class="fn">delete</span>(<span class="str">'/:id'</span>,
+  requireAuth,
+  <span class="fn">requireRole</span>(<span class="str">'super_admin'</span>, <span class="str">'section_head'</span>),
+  <span class="fn">wrap</span>(<span class="num">200</span>, req =&gt; projectService.<span class="fn">softDelete</span>(req.user, req.params.id))
+);
+
+module.exports = router;</code></pre>
+
+  <h2>Reading Data From the Request</h2>
+  <p>There are four places where request data can arrive. Here's how to read each one:</p>
+
+  <table>
+    <tr><th>Source</th><th>Example URL/Request</th><th>How to read it</th></tr>
+    <tr><td>URL params</td><td>GET /api/projects/<strong>5</strong></td><td><code>req.params.id</code> → <code>"5"</code></td></tr>
+    <tr><td>Query string</td><td>GET /api/projects<strong>?section_id=2</strong></td><td><code>req.query.section_id</code> → <code>"2"</code></td></tr>
+    <tr><td>Request body</td><td>POST with JSON body</td><td><code>req.body.title</code> → <code>"Network Upgrade"</code></td></tr>
+    <tr><td>Cookies</td><td>Cookie: token=eyJ...</td><td><code>req.cookies.token</code> → <code>"eyJ..."</code></td></tr>
+  </table>
+
+  <div class="callout warn"><div class="callout-icon"></div><p><strong>URL params are always strings.</strong> <code>req.params.id</code> gives you <code>"5"</code> (string), not <code>5</code> (number). SQLite is flexible about this, but be aware when doing strict comparisons.</p></div>
+
+  <h2>URL Parameters: :id</h2>
+  <p>The colon in <code>/:id</code> means "match anything here and put it in <code>req.params.id</code>":</p>
+  <pre><code>router.<span class="fn">get</span>(<span class="str">'/:id'</span>, (req, res) =&gt; {
+  console.<span class="fn">log</span>(req.params.id);
+  <span class="cmt">// GET /api/projects/42 → prints "42"
+  // GET /api/projects/abc → prints "abc"</span>
+});</code></pre>
+
+  <h2>The wrap() Utility Explained</h2>
+  <p>Without <code>wrap()</code>, every route handler would need its own try/catch:</p>
+  <pre><code><span class="cmt">// Without wrap() — repetitive boilerplate</span>
+router.<span class="fn">get</span>(<span class="str">'/'</span>, requireAuth, (req, res) =&gt; {
+  <span class="kw">try</span> {
+    <span class="kw">const</span> result = projectService.<span class="fn">list</span>(req.user, req.query);
+    res.<span class="fn">status</span>(<span class="num">200</span>).<span class="fn">json</span>(result);
+  } <span class="kw">catch</span> (err) {
+    res.<span class="fn">status</span>(err.status || <span class="num">500</span>).<span class="fn">json</span>({ error: err.message });
+  }
+});
+
+<span class="cmt">// With wrap() — same thing, one line</span>
+router.<span class="fn">get</span>(<span class="str">'/'</span>, requireAuth, <span class="fn">wrap</span>(<span class="num">200</span>, req =&gt; projectService.<span class="fn">list</span>(req.user, req.query)));</code></pre>
+
+  <p>The <code>200</code> in <code>wrap(200, ...)</code> is the HTTP status code to send on success. <code>201</code> means "Created" (used for POST). <code>200</code> means "OK" (used for GET/PUT/PATCH/DELETE).</p>
+
+  <h2>Why Route Order Matters</h2>
+  <p>Express matches routes in the order they are defined. This creates a trap with URL params:</p>
+
+  <pre><code><span class="cmt">// ❌ WRONG ORDER — "/deadline-changes" would match /:id first</span>
+router.<span class="fn">get</span>(<span class="str">'/:id'</span>, ...);            <span class="cmt">// matches FIRST — "deadline-changes" becomes req.params.id</span>
+router.<span class="fn">get</span>(<span class="str">'/deadline-changes'</span>, ...); <span class="cmt">// never reached</span>
+
+<span class="cmt">// ✅ CORRECT ORDER — specific paths before param paths</span>
+router.<span class="fn">get</span>(<span class="str">'/deadline-changes'</span>, ...); <span class="cmt">// checked first — matches the literal string</span>
+router.<span class="fn">get</span>(<span class="str">'/:id'</span>, ...);            <span class="cmt">// only reached if not a literal match</span></code></pre>
+
+  <div class="callout tip"><div class="callout-icon"></div><p><strong>Rule:</strong> Always define specific paths (like <code>/deadline-changes</code>) before wildcard param paths (like <code>/:id</code>) in the same router.</p></div>
+
+  <h2>What Routes Should NOT Do</h2>
+  <p>Routes should be thin. They should not contain business logic. Compare these two approaches:</p>
+  <pre><code><span class="cmt">// ❌ BAD — business logic leaking into the route</span>
+router.<span class="fn">post</span>(<span class="str">'/'</span>, requireAuth, (req, res) =&gt; {
+  <span class="kw">if</span> (!req.body.title) <span class="kw">return</span> res.<span class="fn">status</span>(<span class="num">400</span>).<span class="fn">json</span>({ error: <span class="str">'Title required'</span> });
+  <span class="kw">if</span> (req.user.role === <span class="str">'section_head'</span>) req.body.section_id = req.user.section_id;
+  <span class="kw">const</span> result = projectRepo.<span class="fn">create</span>(req.body);  <span class="cmt">// skipping the service!</span>
+  res.<span class="fn">status</span>(<span class="num">201</span>).<span class="fn">json</span>(result);
+});
+
+<span class="cmt">// ✅ GOOD — route is thin, all logic is in the service</span>
+router.<span class="fn">post</span>(<span class="str">'/'</span>, requireAuth, <span class="fn">requireRole</span>(<span class="str">'super_admin'</span>, <span class="str">'section_head'</span>),
+  <span class="fn">wrap</span>(<span class="num">201</span>, req =&gt; projectService.<span class="fn">create</span>(req.user, req.body))
+);</code></pre>
+
+  <h2>All API Endpoints at a Glance</h2>
+  <table>
+    <tr><th>Method + URL</th><th>Who can access</th><th>What it does</th></tr>
+    <tr><td>POST /api/auth/login</td><td>Anyone</td><td>Login, get JWT</td></tr>
+    <tr><td>POST /api/auth/logout</td><td>Anyone</td><td>Clear cookie</td></tr>
+    <tr><td>GET /api/auth/me</td><td>Logged in</td><td>My profile</td></tr>
+    <tr><td>GET /api/projects</td><td>Logged in</td><td>List projects</td></tr>
+    <tr><td>POST /api/projects</td><td>super_admin, section_head</td><td>Create project</td></tr>
+    <tr><td>PUT /api/projects/:id</td><td>super_admin, section_head</td><td>Update project</td></tr>
+    <tr><td>PATCH /api/projects/:id/archive</td><td>super_admin, section_head</td><td>Archive/unarchive</td></tr>
+    <tr><td>DELETE /api/projects/:id</td><td>super_admin, section_head</td><td>Soft-delete (10 min window)</td></tr>
+    <tr><td>GET /api/projects/:id/history</td><td>Logged in</td><td>Audit trail</td></tr>
+    <tr><td>GET /api/projects/deadline-changes</td><td>super_admin, it_head</td><td>Recent deadline changes</td></tr>
+  </table>
+
+  <div class="page-nav">
+    <a href="04-middleware.html">← Middleware</a>
+    <a href="06-services.html">Next: Services Layer →</a>
+  </div>
+</main>
+</body>
+</html>

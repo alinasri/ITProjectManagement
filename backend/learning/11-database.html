@@ -1,0 +1,410 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Lesson 11 — Database & Schema</title>
+<link rel="stylesheet" href="_shared.css">
+<style>
+  .table-card { background: #1e293b; border: 1px solid #334155; border-radius: 10px; margin: 16px 0 28px; overflow: hidden; }
+  .table-card-header { background: #0f172a; padding: 14px 20px; display: flex; align-items: center; gap: 12px; border-bottom: 1px solid #334155; }
+  .table-card-header h3 { margin: 0; font-size: 1rem; color: #38bdf8; font-family: monospace; }
+  .table-card-header span { font-size: 0.8rem; color: #64748b; }
+  .table-card table { margin: 0; }
+  .table-card th { background: transparent; border-bottom-color: #334155; }
+  .col-pk { color: #fb923c !important; }
+  .col-fk { color: #a78bfa !important; }
+  .col-flag { color: #34d399 !important; }
+  .col-check { color: #f472b6 !important; }
+  .rel-diagram { background: #0a0f1a; border: 1px solid #1e293b; border-radius: 10px; padding: 24px; font-family: monospace; font-size: 0.82rem; color: #94a3b8; line-height: 2; white-space: pre; overflow-x: auto; margin: 16px 0 24px; }
+  .legend { display: flex; flex-wrap: wrap; gap: 16px; margin: 12px 0 24px; }
+  .legend-item { display: flex; align-items: center; gap: 8px; font-size: 0.8rem; color: #94a3b8; }
+  .legend-dot { width: 10px; height: 10px; border-radius: 50%; }
+</style>
+</head>
+<body>
+
+<nav>
+  <div class="logo"><a href="index.html">Backend Learning Hub</a><span>IT Project Management</span></div>
+  <div class="section-label">Lessons</div>
+  <a href="01-architecture.html"><span class="num">01</span> Architecture</a>
+  <a href="02-request-lifecycle.html"><span class="num">02</span> Request Lifecycle</a>
+  <a href="03-entry-point.html"><span class="num">03</span> Entry Point</a>
+  <a href="04-middleware.html"><span class="num">04</span> Middleware</a>
+  <a href="05-routes.html"><span class="num">05</span> Routes Layer</a>
+  <a href="06-services.html"><span class="num">06</span> Services Layer</a>
+  <a href="07-repositories.html"><span class="num">07</span> Repositories Layer</a>
+  <a href="08-helpers-utils.html"><span class="num">08</span> Helpers & Utils</a>
+  <a href="09-auth-deep-dive.html"><span class="num">09</span> Auth Deep Dive</a>
+  <a href="10-complete-walkthrough.html"><span class="num">10</span> Complete Walkthrough</a>
+  <a href="11-database.html" class="active"><span class="num">11</span> Database & Schema</a>
+  <a href="12-tests.html"><span class="num">12</span> Testing</a>
+</nav>
+
+<main>
+  <h1>🗄️ Database & Schema</h1>
+  <p class="subtitle">The database is the single source of truth for everything in the system. This lesson covers every table, every column, how they relate to each other, and how the schema evolves safely over time via migrations.</p>
+
+  <h2>SQLite — A File Is the Database</h2>
+  <p>Unlike PostgreSQL or MySQL, SQLite needs no server. The entire database lives in one file: <code>backend/data/it_pm.db</code>. The app opens it on startup and reads/writes to it directly. This makes setup trivial and backups as simple as copying one file.</p>
+  <pre><code><span class="cmt">// src/db/schema.js</span>
+<span class="kw">const</span> { DatabaseSync } = <span class="fn">require</span>(<span class="str">'node:sqlite'</span>);
+
+<span class="cmt">// DATA_DIR can be overridden by environment variable (for Docker volumes, etc.)
+// Default: backend/data/</span>
+<span class="kw">const</span> DATA_DIR = process.env.DATA_DIR || path.<span class="fn">join</span>(__dirname, <span class="str">'../../data'</span>);
+
+<span class="kw">const</span> db = <span class="kw">new</span> <span class="fn">DatabaseSync</span>(path.<span class="fn">join</span>(DATA_DIR, <span class="str">'it_pm.db'</span>));
+
+<span class="cmt">// WAL mode: allows multiple readers while one writer is active (better concurrency)</span>
+db.<span class="fn">exec</span>(<span class="str">"PRAGMA journal_mode = WAL"</span>);
+
+<span class="cmt">// SQLite ignores foreign keys by default — this must be turned on explicitly</span>
+db.<span class="fn">exec</span>(<span class="str">"PRAGMA foreign_keys = ON"</span>);</code></pre>
+
+  <h2>Entity Relationship Overview</h2>
+  <div class="rel-diagram">sections ──┬── projects ──── project_responsibles ──── personnel
+            │       └── custom_values ──── custom_columns
+            │
+            ├── ongoing_tasks ──── ongoing_task_responsibles ──── personnel
+            │
+            ├── custom_columns
+            │
+            ├── users
+            │
+            ├── purchase_sections ──── purchases
+            │
+            ├── tender_sections ──── tenders
+            │
+            └── contract_sections ──── contracts
+
+<span style="color:#38bdf8">status_history</span> ← written by projects, ongoing_tasks, purchases, tenders, contracts
+<span style="color:#38bdf8">report_tokens</span>  ← single row, stores the public share token
+<span style="color:#38bdf8">_migrations</span>    ← tracks which schema changes have been applied</div>
+
+  <div class="legend">
+    <div class="legend-item"><div class="legend-dot" style="background:#fb923c"></div> Primary Key (PK)</div>
+    <div class="legend-item"><div class="legend-dot" style="background:#a78bfa"></div> Foreign Key (FK)</div>
+    <div class="legend-item"><div class="legend-dot" style="background:#34d399"></div> Flag columns (0/1 integers)</div>
+    <div class="legend-item"><div class="legend-dot" style="background:#f472b6"></div> CHECK constraints (enum values)</div>
+  </div>
+
+  <h2>Core Tables</h2>
+
+  <div class="table-card">
+    <div class="table-card-header">
+      <h3>sections</h3>
+      <span>Organisational units. Everything else belongs to a section.</span>
+    </div>
+    <table>
+      <tr><th>Column</th><th>Type</th><th>Notes</th></tr>
+      <tr><td class="col-pk">id</td><td>INTEGER PK</td><td>Auto-incremented</td></tr>
+      <tr><td>name</td><td>TEXT NOT NULL</td><td>e.g. "شبکه و امنیت"</td></tr>
+      <tr><td>created_at</td><td>TEXT</td><td>SQLite datetime string, set on insert</td></tr>
+      <tr><td>updated_at</td><td>TEXT</td><td>Updated manually on each write</td></tr>
+    </table>
+  </div>
+
+  <div class="table-card">
+    <div class="table-card-header">
+      <h3>users</h3>
+      <span>Login accounts. One user per person who can log in.</span>
+    </div>
+    <table>
+      <tr><th>Column</th><th>Type</th><th>Notes</th></tr>
+      <tr><td class="col-pk">id</td><td>INTEGER PK</td><td></td></tr>
+      <tr><td>username</td><td>TEXT UNIQUE NOT NULL</td><td>Login name; must be unique</td></tr>
+      <tr><td>password_hash</td><td>TEXT NOT NULL</td><td>bcrypt hash — never the plain password</td></tr>
+      <tr><td class="col-check">role</td><td>TEXT CHECK</td><td>super_admin | it_head | section_head | purchase_admin | tender_admin | contract_admin</td></tr>
+      <tr><td class="col-fk">section_id</td><td>INTEGER FK → sections</td><td>NULL for global roles; required for section_head. ON DELETE SET NULL.</td></tr>
+      <tr><td class="col-flag">must_change_password</td><td>INTEGER 0/1</td><td>1 = user must change password on next login</td></tr>
+      <tr><td class="col-flag">is_active</td><td>INTEGER 0/1 DEFAULT 1</td><td>0 = account disabled (cannot log in)</td></tr>
+      <tr><td class="col-flag">is_deleted</td><td>INTEGER 0/1 DEFAULT 0</td><td>Soft delete flag</td></tr>
+      <tr><td>created_at</td><td>TEXT</td><td></td></tr>
+    </table>
+  </div>
+
+  <div class="table-card">
+    <div class="table-card-header">
+      <h3>personnel</h3>
+      <span>People in the department who can be assigned as responsibles on projects/tasks.</span>
+    </div>
+    <table>
+      <tr><th>Column</th><th>Type</th><th>Notes</th></tr>
+      <tr><td class="col-pk">id</td><td>INTEGER PK</td><td></td></tr>
+      <tr><td>name</td><td>TEXT NOT NULL</td><td>Person's display name</td></tr>
+      <tr><td class="col-fk">section_id</td><td>INTEGER FK → sections</td><td>NOT NULL. ON DELETE CASCADE — deleted with their section.</td></tr>
+      <tr><td>created_at</td><td>TEXT</td><td></td></tr>
+    </table>
+  </div>
+
+  <h2>Domain Tables</h2>
+
+  <div class="table-card">
+    <div class="table-card-header">
+      <h3>projects</h3>
+      <span>IT projects tracked per section. The richest table in the system.</span>
+    </div>
+    <table>
+      <tr><th>Column</th><th>Type</th><th>Notes</th></tr>
+      <tr><td class="col-pk">id</td><td>INTEGER PK</td><td></td></tr>
+      <tr><td>title</td><td>TEXT NOT NULL</td><td>Required — validated in service layer</td></tr>
+      <tr><td class="col-fk">section_id</td><td>INTEGER FK → sections</td><td>NOT NULL. ON DELETE CASCADE.</td></tr>
+      <tr><td class="col-check">status</td><td>TEXT CHECK</td><td>not_started | in_progress | on_hold | completed</td></tr>
+      <tr><td>future_plan</td><td>TEXT DEFAULT ''</td><td>Rich text field, optional</td></tr>
+      <tr><td>problems</td><td>TEXT DEFAULT ''</td><td>Rich text field, optional</td></tr>
+      <tr><td>row_order</td><td>INTEGER DEFAULT 0</td><td>Controls display ordering within a section</td></tr>
+      <tr><td>progress</td><td>INTEGER DEFAULT 0</td><td>0–100, clamped in service layer</td></tr>
+      <tr><td>due_date</td><td>TEXT</td><td>Nullable ISO date string, e.g. "2024-03-15"</td></tr>
+      <tr><td class="col-flag">is_archived</td><td>INTEGER 0/1 DEFAULT 0</td><td>Archived projects hidden from default view</td></tr>
+      <tr><td class="col-flag">is_deleted</td><td>INTEGER 0/1 DEFAULT 0</td><td>Soft delete — row preserved but invisible</td></tr>
+      <tr><td>created_at</td><td>TEXT</td><td>Used by the 10-minute deletion window check</td></tr>
+      <tr><td>updated_at</td><td>TEXT</td><td>Updated on every PUT/PATCH</td></tr>
+    </table>
+  </div>
+
+  <div class="table-card">
+    <div class="table-card-header">
+      <h3>ongoing_tasks</h3>
+      <span>Recurring or long-running work items, similar structure to projects.</span>
+    </div>
+    <table>
+      <tr><th>Column</th><th>Type</th><th>Notes</th></tr>
+      <tr><td class="col-pk">id</td><td>INTEGER PK</td><td></td></tr>
+      <tr><td>title</td><td>TEXT NOT NULL</td><td></td></tr>
+      <tr><td class="col-fk">section_id</td><td>INTEGER FK → sections</td><td>NOT NULL. ON DELETE CASCADE.</td></tr>
+      <tr><td class="col-check">status</td><td>TEXT CHECK</td><td>pending | in_progress | on_hold | completed</td></tr>
+      <tr><td>note</td><td>TEXT DEFAULT ''</td><td>Free text notes</td></tr>
+      <tr><td>progress</td><td>INTEGER DEFAULT 0</td><td>0–100</td></tr>
+      <tr><td class="col-flag">is_archived</td><td>INTEGER 0/1 DEFAULT 0</td><td></td></tr>
+      <tr><td class="col-flag">is_deleted</td><td>INTEGER 0/1 DEFAULT 0</td><td></td></tr>
+      <tr><td>created_at / updated_at</td><td>TEXT</td><td></td></tr>
+    </table>
+  </div>
+
+  <div class="table-card">
+    <div class="table-card-header">
+      <h3>purchases</h3>
+      <span>Purchase orders. Not section-specific at the row level — linked to sections via purchase_sections.</span>
+    </div>
+    <table>
+      <tr><th>Column</th><th>Type</th><th>Notes</th></tr>
+      <tr><td class="col-pk">id</td><td>INTEGER PK</td><td></td></tr>
+      <tr><td>title</td><td>TEXT NOT NULL</td><td></td></tr>
+      <tr><td class="col-check">status</td><td>TEXT CHECK</td><td>pending | approved | purchased | delivered | cancelled</td></tr>
+      <tr><td>supplier</td><td>TEXT DEFAULT ''</td><td>Vendor name</td></tr>
+      <tr><td>amount</td><td>TEXT DEFAULT ''</td><td>Stored as TEXT (currency formatting handled in frontend)</td></tr>
+      <tr><td>purchase_date</td><td>TEXT DEFAULT ''</td><td>Date string</td></tr>
+      <tr><td>description</td><td>TEXT DEFAULT ''</td><td></td></tr>
+      <tr><td class="col-flag">is_archived / is_deleted</td><td>INTEGER 0/1</td><td></td></tr>
+    </table>
+  </div>
+
+  <div class="table-card">
+    <div class="table-card-header">
+      <h3>tenders</h3>
+      <span>Vendor bidding processes (مناقصه).</span>
+    </div>
+    <table>
+      <tr><th>Column</th><th>Type</th><th>Notes</th></tr>
+      <tr><td class="col-pk">id</td><td>INTEGER PK</td><td></td></tr>
+      <tr><td>title</td><td>TEXT NOT NULL</td><td></td></tr>
+      <tr><td class="col-check">status</td><td>TEXT CHECK</td><td>open | evaluating | awarded | completed | cancelled</td></tr>
+      <tr><td>estimated_amount</td><td>TEXT DEFAULT ''</td><td></td></tr>
+      <tr><td>deadline</td><td>TEXT DEFAULT ''</td><td>Submission deadline</td></tr>
+      <tr><td>winner</td><td>TEXT DEFAULT ''</td><td>Awarded vendor name</td></tr>
+      <tr><td>description</td><td>TEXT DEFAULT ''</td><td></td></tr>
+      <tr><td class="col-flag">is_archived / is_deleted</td><td>INTEGER 0/1</td><td></td></tr>
+    </table>
+  </div>
+
+  <div class="table-card">
+    <div class="table-card-header">
+      <h3>contracts</h3>
+      <span>Vendor agreements with expiry tracking.</span>
+    </div>
+    <table>
+      <tr><th>Column</th><th>Type</th><th>Notes</th></tr>
+      <tr><td class="col-pk">id</td><td>INTEGER PK</td><td></td></tr>
+      <tr><td>title</td><td>TEXT NOT NULL</td><td></td></tr>
+      <tr><td class="col-check">status</td><td>TEXT CHECK</td><td>active | renewed | expired | cancelled</td></tr>
+      <tr><td>counterparty</td><td>TEXT DEFAULT ''</td><td>Vendor / party name</td></tr>
+      <tr><td>start_date / end_date</td><td>TEXT DEFAULT ''</td><td>Contract date range</td></tr>
+      <tr><td>amount</td><td>TEXT DEFAULT ''</td><td></td></tr>
+      <tr><td>description</td><td>TEXT DEFAULT ''</td><td></td></tr>
+      <tr><td class="col-flag">is_archived / is_deleted</td><td>INTEGER 0/1</td><td></td></tr>
+    </table>
+  </div>
+
+  <h2>Join Tables (Many-to-Many Relationships)</h2>
+  <p>A join table links two entities without adding extra columns. A project can have multiple responsible people, and a person can be responsible for multiple projects. A simple foreign key couldn't model this — you'd need a separate row for each combination.</p>
+
+  <div class="table-card">
+    <div class="table-card-header">
+      <h3>project_responsibles</h3>
+      <span>Links projects ↔ personnel</span>
+    </div>
+    <table>
+      <tr><th>Column</th><th>Type</th><th>Notes</th></tr>
+      <tr><td class="col-fk">project_id</td><td>INTEGER FK → projects</td><td rowspan="2">Both columns form the composite PRIMARY KEY — no duplicates allowed</td></tr>
+      <tr><td class="col-fk">personnel_id</td><td>INTEGER FK → personnel</td></tr>
+    </table>
+  </div>
+
+  <div class="table-card">
+    <div class="table-card-header">
+      <h3>ongoing_task_responsibles</h3>
+      <span>Links ongoing_tasks ↔ personnel</span>
+    </div>
+    <table>
+      <tr><th>Column</th><th>Type</th><th>Notes</th></tr>
+      <tr><td class="col-fk">task_id</td><td>INTEGER FK → ongoing_tasks</td><td rowspan="2">Composite PRIMARY KEY</td></tr>
+      <tr><td class="col-fk">personnel_id</td><td>INTEGER FK → personnel</td></tr>
+    </table>
+  </div>
+
+  <div class="table-card">
+    <div class="table-card-header">
+      <h3>purchase_sections / tender_sections / contract_sections</h3>
+      <span>Links purchases, tenders, and contracts to one or more sections</span>
+    </div>
+    <table>
+      <tr><th>Column</th><th>Type</th><th>Notes</th></tr>
+      <tr><td class="col-fk">[entity]_id</td><td>INTEGER FK</td><td rowspan="2">Same pattern as project_responsibles</td></tr>
+      <tr><td class="col-fk">section_id</td><td>INTEGER FK → sections</td></tr>
+    </table>
+  </div>
+
+  <h2>Supporting Tables</h2>
+
+  <div class="table-card">
+    <div class="table-card-header">
+      <h3>custom_columns</h3>
+      <span>User-defined extra fields per section (e.g. "Priority", "Budget Code")</span>
+    </div>
+    <table>
+      <tr><th>Column</th><th>Type</th><th>Notes</th></tr>
+      <tr><td class="col-pk">id</td><td>INTEGER PK</td><td></td></tr>
+      <tr><td class="col-fk">section_id</td><td>INTEGER FK → sections</td><td>ON DELETE CASCADE</td></tr>
+      <tr><td>column_name</td><td>TEXT NOT NULL</td><td>The label shown in the UI</td></tr>
+      <tr><td>column_order</td><td>INTEGER DEFAULT 0</td><td>Display ordering</td></tr>
+    </table>
+  </div>
+
+  <div class="table-card">
+    <div class="table-card-header">
+      <h3>custom_values</h3>
+      <span>The actual values for each custom column on each project</span>
+    </div>
+    <table>
+      <tr><th>Column</th><th>Type</th><th>Notes</th></tr>
+      <tr><td class="col-pk">id</td><td>INTEGER PK</td><td></td></tr>
+      <tr><td class="col-fk">project_id</td><td>INTEGER FK → projects</td><td>ON DELETE CASCADE</td></tr>
+      <tr><td class="col-fk">column_id</td><td>INTEGER FK → custom_columns</td><td>ON DELETE CASCADE</td></tr>
+      <tr><td>value</td><td>TEXT DEFAULT ''</td><td>The stored value</td></tr>
+      <tr><td>UNIQUE(project_id, column_id)</td><td>—</td><td>Enables the ON CONFLICT upsert pattern</td></tr>
+    </table>
+  </div>
+
+  <div class="table-card">
+    <div class="table-card-header">
+      <h3>status_history</h3>
+      <span>Audit trail. Every status change for every entity lands here.</span>
+    </div>
+    <table>
+      <tr><th>Column</th><th>Type</th><th>Notes</th></tr>
+      <tr><td class="col-pk">id</td><td>INTEGER PK</td><td></td></tr>
+      <tr><td class="col-check">entity_type</td><td>TEXT CHECK</td><td>project | ongoing_task | purchase | tender | contract</td></tr>
+      <tr><td>entity_id</td><td>INTEGER</td><td>The ID of the changed record. No FK — intentional (see below)</td></tr>
+      <tr><td>field</td><td>TEXT</td><td>NULL for status changes; populated for field changes (e.g. 'due_date')</td></tr>
+      <tr><td>from_status</td><td>TEXT</td><td>NULL when the entity is first created</td></tr>
+      <tr><td>to_status</td><td>TEXT NOT NULL</td><td>The new value</td></tr>
+      <tr><td class="col-fk">changed_by</td><td>INTEGER FK → users</td><td>ON DELETE SET NULL (history preserved even if user is deleted)</td></tr>
+      <tr><td>changed_at</td><td>TEXT</td><td>Timestamp of the change</td></tr>
+    </table>
+    <div style="padding: 12px 16px; color: #64748b; font-size: 0.82rem; border-top: 1px solid #334155;">
+      ⚠️ <code>entity_id</code> has no FK constraint intentionally. Soft-deleted entities still have history, and a FK would break if the entity were hard-deleted in the future.
+    </div>
+  </div>
+
+  <div class="table-card">
+    <div class="table-card-header">
+      <h3>report_tokens</h3>
+      <span>Stores the single public share token for the report page</span>
+    </div>
+    <table>
+      <tr><th>Column</th><th>Type</th><th>Notes</th></tr>
+      <tr><td class="col-pk">id</td><td>INTEGER PK DEFAULT 1</td><td>Always 1 — there's only ever one token</td></tr>
+      <tr><td>token</td><td>TEXT NOT NULL</td><td>Random string used in the public URL</td></tr>
+      <tr><td>created_at</td><td>TEXT</td><td></td></tr>
+    </table>
+  </div>
+
+  <div class="table-card">
+    <div class="table-card-header">
+      <h3>_migrations</h3>
+      <span>Tracks which schema migrations have been applied</span>
+    </div>
+    <table>
+      <tr><th>Column</th><th>Type</th><th>Notes</th></tr>
+      <tr><td class="col-pk">id</td><td>TEXT PK</td><td>Migration name e.g. "006_add_is_deleted"</td></tr>
+      <tr><td>ran_at</td><td>TEXT</td><td>When it was applied</td></tr>
+    </table>
+  </div>
+
+  <h2>How Migrations Work</h2>
+  <p>The schema in <code>db/schema.js</code> uses <code>CREATE TABLE IF NOT EXISTS</code> for the current state of the database. But what about changes to <em>existing</em> databases? You can't drop and recreate tables — users would lose all their data. Migrations handle this.</p>
+
+  <pre><code><span class="cmt">// The pattern: check if already done → run if not → stamp as done</span>
+<span class="kw">function</span> <span class="fn">runMigration</span>(id, fn) {
+  <span class="kw">if</span> (<span class="fn">hasRun</span>(id)) <span class="kw">return</span>;  <span class="cmt">// already applied — skip</span>
+  <span class="fn">fn</span>();                   <span class="cmt">// run the change</span>
+  <span class="fn">stamp</span>(id);              <span class="cmt">// record it as done</span>
+}
+
+<span class="cmt">// Example: migration 009 adds a new column to an existing table
+// ALTER TABLE ... ADD COLUMN is safe — existing rows get the default value</span>
+<span class="fn">runMigration</span>(<span class="str">'009_add_due_date_to_projects'</span>, () =&gt; {
+  db.<span class="fn">exec</span>(<span class="str">`ALTER TABLE projects ADD COLUMN due_date TEXT`</span>);
+});</code></pre>
+
+  <div class="callout warn"><div class="callout-icon"></div><p><strong>SQLite limitation:</strong> SQLite cannot modify or drop columns via <code>ALTER TABLE</code>. To change a column definition (like adding a new value to a CHECK constraint), you must create a new table with the new definition, copy the data, drop the old table, and rename the new one. See migration <code>003_add_registry_admin_roles</code> for an example of this pattern.</p></div>
+
+  <h2>Initial Seed Data</h2>
+  <p>On a brand-new database, the app seeds five sections and one admin account so the system is immediately usable:</p>
+  <pre><code><span class="cmt">// Only runs when the sections table is empty (fresh database)</span>
+<span class="kw">const</span> existing = db.<span class="fn">prepare</span>(<span class="str">'SELECT COUNT(*) as c FROM sections'</span>).<span class="fn">get</span>();
+<span class="kw">if</span> (existing.c === <span class="num">0</span>) {
+  <span class="cmt">// Five default sections (in Persian)</span>
+  [
+    <span class="str">'تحول دیجیتال و مدیریت داده‌ها'</span>,
+    <span class="str">'شبکه و امنیت'</span>,
+    <span class="str">'پشتیبانی'</span>,
+    <span class="str">'ساماندهی اطلاعات اکتشافی'</span>,
+    <span class="str">'طراحی و توسعه'</span>,
+  ].<span class="fn">forEach</span>(name =&gt; insertSection.<span class="fn">run</span>(name));
+
+  <span class="cmt">// Default admin account: username=admin, password=admin123
+  // must_change_password=1 forces a password reset on first login</span>
+  db.<span class="fn">prepare</span>(<span class="str">`INSERT INTO users (username, password_hash, role, must_change_password) VALUES (?, ?, 'super_admin', 1)`</span>)
+    .<span class="fn">run</span>(<span class="str">'admin'</span>, bcrypt.<span class="fn">hashSync</span>(<span class="str">'admin123'</span>, <span class="num">10</span>));
+}</code></pre>
+
+  <h2>Key Design Decisions Explained</h2>
+
+  <h3>Why TEXT for dates, amounts, and phone numbers?</h3>
+  <p>SQLite stores dates as TEXT (there is no native DATE type). Using TEXT is consistent, and comparison/sorting works naturally for ISO-format dates (<code>2024-03-15</code>). Amounts are also stored as TEXT because currency formatting (commas, currency symbols, decimal places) is handled in the frontend.</p>
+
+  <h3>Why are purchases/tenders/contracts linked to sections via a join table rather than a direct FK?</h3>
+  <p>Projects belong to exactly one section. But a purchase order might apply to multiple sections (e.g. hardware bought for the Support and Network sections). The join table (<code>purchase_sections</code>) models this many-to-many relationship cleanly.</p>
+
+  <h3>Why does status_history.entity_id have no FK?</h3>
+  <p>If <code>entity_id</code> were a FK to <code>projects.id</code> (for example), then the ON DELETE behavior would be a problem. With <code>ON DELETE CASCADE</code>, soft-deleting a project would wipe its history — defeating the purpose. With <code>ON DELETE SET NULL</code>, you'd lose which project the history belongs to. No FK is the right choice: the audit trail is never cleaned up.</p>
+
+  <div class="page-nav">
+    <a href="10-complete-walkthrough.html">← Complete Walkthrough</a>
+    <a href="12-tests.html">Next: Testing →</a>
+  </div>
+</main>
+</body>
+</html>

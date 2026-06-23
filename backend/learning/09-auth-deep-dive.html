@@ -1,0 +1,223 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Lesson 09 — Authentication Deep Dive</title>
+<link rel="stylesheet" href="_shared.css">
+</head>
+<body>
+
+<nav>
+  <div class="logo"><a href="index.html">Backend Learning Hub</a><span>IT Project Management</span></div>
+  <div class="section-label">Lessons</div>
+  <a href="01-architecture.html"><span class="num">01</span> Architecture</a>
+  <a href="02-request-lifecycle.html"><span class="num">02</span> Request Lifecycle</a>
+  <a href="03-entry-point.html"><span class="num">03</span> Entry Point</a>
+  <a href="04-middleware.html"><span class="num">04</span> Middleware</a>
+  <a href="05-routes.html"><span class="num">05</span> Routes Layer</a>
+  <a href="06-services.html"><span class="num">06</span> Services Layer</a>
+  <a href="07-repositories.html"><span class="num">07</span> Repositories Layer</a>
+  <a href="08-helpers-utils.html"><span class="num">08</span> Helpers & Utils</a>
+  <a href="09-auth-deep-dive.html" class="active"><span class="num">09</span> Auth Deep Dive</a>
+  <a href="10-complete-walkthrough.html"><span class="num">10</span> Complete Walkthrough</a>
+  <a href="11-database.html"><span class="num">11</span> Database & Schema</a>
+  <a href="12-tests.html"><span class="num">12</span> Testing</a>
+</nav>
+
+<main>
+  <h1>🔐 Authentication Deep Dive</h1>
+  <p class="subtitle">How do we know who someone is? How do we store passwords safely? How does the server remember a logged-in user across multiple requests? This lesson explains every piece of the authentication system.</p>
+
+  <h2>The Problem: HTTP Is Stateless</h2>
+  <p>HTTP doesn't "remember" anything. Each request is independent. If you make 100 requests, the server has no idea they came from the same person. We need a mechanism to prove identity on every request.</p>
+
+  <div class="diagram">❌ Without auth:
+  Browser → GET /api/projects
+  Server:  "Who are you? I don't know."
+
+✅ With JWT in cookie:
+  Browser → GET /api/projects
+            Cookie: token=eyJ...   ← "It's me, user 5, section_head"
+  Server:  "Token checks out. Welcome, Ali."</div>
+
+  <h2>Step 1: Storing Passwords Safely</h2>
+  <p>Passwords must <strong>never</strong> be stored as plain text. If the database leaks, attackers would have everyone's password. Instead, passwords are hashed using <code>bcryptjs</code>.</p>
+
+  <h3>What is a hash?</h3>
+  <p>A hash is a one-way transformation. You can turn "mypassword" into a hash, but you cannot turn the hash back into "mypassword". To verify, you hash the input again and compare the hashes.</p>
+
+  <pre><code><span class="kw">const</span> bcrypt = <span class="fn">require</span>(<span class="str">'bcryptjs'</span>);
+
+<span class="cmt">// When creating a user (or changing password):</span>
+<span class="kw">const</span> hash = bcrypt.<span class="fn">hashSync</span>(<span class="str">'mypassword123'</span>, <span class="num">10</span>);
+<span class="cmt">// hash = "$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy"
+// The "10" is the cost factor: how much computational work to do
+// Higher = slower = harder for attackers to brute-force
+
+// To verify at login:</span>
+bcrypt.<span class="fn">compareSync</span>(<span class="str">'mypassword123'</span>, hash);  <span class="cmt">// → true</span>
+bcrypt.<span class="fn">compareSync</span>(<span class="str">'wrongpassword'</span>, hash);  <span class="cmt">// → false</span></code></pre>
+
+  <div class="callout key"><div class="callout-icon"></div><p>bcrypt automatically generates a random <strong>salt</strong> (a unique random string appended to the password before hashing). This means two users with the same password get completely different hashes. An attacker can't use a precomputed "rainbow table" to crack bcrypt hashes.</p></div>
+
+  <h2>Step 2: The Login Flow</h2>
+  <p>File: <code>src/services/authService.js</code></p>
+
+  <pre><code><span class="kw">const</span> bcrypt = <span class="fn">require</span>(<span class="str">'bcryptjs'</span>);
+<span class="kw">const</span> jwt = <span class="fn">require</span>(<span class="str">'jsonwebtoken'</span>);
+<span class="kw">const</span> userRepo = <span class="fn">require</span>(<span class="str">'../repositories/userRepository'</span>);
+<span class="kw">const</span> ServiceError = <span class="fn">require</span>(<span class="str">'../utils/serviceError'</span>);
+
+<span class="kw">const</span> JWT_SECRET = process.env.JWT_SECRET || <span class="str">'change-this-secret-in-production'</span>;
+
+<span class="kw">function</span> <span class="fn">login</span>({ username, password }) {
+  <span class="kw">if</span> (!username || !password) <span class="kw">throw new</span> <span class="fn">ServiceError</span>(<span class="num">400</span>, <span class="str">'Missing credentials'</span>);
+
+  <span class="kw">const</span> user = userRepo.<span class="fn">findByUsername</span>(username);
+
+  <span class="cmt">// SECURITY: Never say "user not found" vs "wrong password" separately.
+  // If we returned early when user is null, an attacker could enumerate
+  // which usernames exist. We always run bcrypt.compareSync to take the
+  // same amount of time regardless, then give the same error message.</span>
+  <span class="kw">if</span> (!user || !bcrypt.<span class="fn">compareSync</span>(password, user.password_hash)) {
+    <span class="kw">throw new</span> <span class="fn">ServiceError</span>(<span class="num">401</span>, <span class="str">'Invalid username or password'</span>);
+  }
+
+  <span class="kw">if</span> (user.is_active === <span class="num">0</span>) <span class="kw">throw new</span> <span class="fn">ServiceError</span>(<span class="num">403</span>, <span class="str">'Account disabled'</span>);
+
+  <span class="cmt">// Create a signed token containing the user's identity
+  // This token is sent to the client and included in all future requests</span>
+  <span class="kw">const</span> token = jwt.<span class="fn">sign</span>(
+    { id: user.id, username: user.username, role: user.role, section_id: user.section_id },
+    JWT_SECRET,
+    { expiresIn: <span class="str">'8h'</span> }  <span class="cmt">// token expires after 8 hours</span>
+  );
+
+  <span class="kw">return</span> {
+    token,
+    user: {
+      id: user.id, username: user.username, role: user.role,
+      section_id: user.section_id,
+      must_change_password: user.must_change_password === <span class="num">1</span>,
+    },
+  };
+}</code></pre>
+
+  <h2>Step 3: What Is a JWT?</h2>
+  <p>JWT stands for <strong>JSON Web Token</strong>. It has three parts separated by dots:</p>
+  <div class="diagram">eyJhbGciOiJIUzI1NiJ9  .  eyJpZCI6NSwidXNlcm5hbWUiOiJhbGkifQ  .  SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c
+        ↑                              ↑                                            ↑
+    Header                         Payload                                     Signature
+(algorithm used)            (the data — base64)                    (HMAC of header+payload using JWT_SECRET)</div>
+
+  <p>The payload is just <strong>base64-encoded JSON</strong> — anyone can decode it and read it. It is NOT encrypted. But it <strong>cannot be forged</strong> without the secret key, because the signature would not match.</p>
+
+  <pre><code><span class="cmt">// Payload (readable by anyone who has the token):</span>
+{
+  <span class="str">"id"</span>: <span class="num">5</span>,
+  <span class="str">"username"</span>: <span class="str">"ali"</span>,
+  <span class="str">"role"</span>: <span class="str">"section_head"</span>,
+  <span class="str">"section_id"</span>: <span class="num">2</span>,
+  <span class="str">"iat"</span>: <span class="num">1703000000</span>,  <span class="cmt">// issued at (timestamp)</span>
+  <span class="str">"exp"</span>: <span class="num">1703028800</span>   <span class="cmt">// expires at (8 hours later)</span>
+}
+
+<span class="cmt">// jwt.verify() checks:
+// 1. Is the signature valid? (was this issued by our server?)
+// 2. Is exp in the future? (is the token still valid?)
+// If both pass, it returns the payload. If not, it throws.</span>
+req.user = jwt.<span class="fn">verify</span>(token, JWT_SECRET);</code></pre>
+
+  <div class="callout warn"><div class="callout-icon"></div><p><strong>Never put sensitive data in a JWT payload</strong> — the password hash, full personal info, or anything you don't want users to see. The payload is readable by anyone who has the token.</p></div>
+
+  <h2>Step 4: Storing the Token in a Cookie</h2>
+  <p>File: <code>src/routes/auth.js</code></p>
+  <pre><code><span class="cmt">// After login, the token is set as an HTTP cookie:</span>
+res.<span class="fn">cookie</span>(<span class="str">'token'</span>, token, {
+  httpOnly: <span class="kw">true</span>,    <span class="cmt">// ← browser JavaScript CANNOT read this cookie
+                      //   prevents XSS attacks from stealing the token</span>
+  sameSite: <span class="str">'lax'</span>,  <span class="cmt">// ← CSRF protection: only sends on same-site requests</span>
+  maxAge: <span class="num">8</span> * <span class="num">60</span> * <span class="num">60</span> * <span class="num">1000</span>  <span class="cmt">// ← cookie expires in 8 hours (milliseconds)</span>
+});
+
+<span class="cmt">// The token is ALSO returned in the JSON response body
+// so the frontend can store it in memory (not localStorage) if preferred</span>
+res.<span class="fn">json</span>({ token, user });</code></pre>
+
+  <h3>Why httpOnly?</h3>
+  <p>If a website has an XSS vulnerability (Cross-Site Scripting), malicious JavaScript injected into the page can read <code>localStorage</code> and steal tokens stored there. With <code>httpOnly: true</code>, the cookie is invisible to JavaScript — only the browser itself sends it. This protects the token even if XSS occurs.</p>
+
+  <h2>Step 5: Sending the Token on Subsequent Requests</h2>
+  <p>After login, the browser automatically sends the cookie on every request to the same domain. The user doesn't need to do anything.</p>
+
+  <div class="diagram">1. Login:
+   Browser → POST /api/auth/login { username, password }
+   Server  ← HTTP 200 + Set-Cookie: token=eyJ... httpOnly
+
+2. Any subsequent request:
+   Browser → GET /api/projects
+             Cookie: token=eyJ...  ← auto-sent by browser
+
+3. Logout:
+   Browser → POST /api/auth/logout
+   Server  ← HTTP 200 + Set-Cookie: token=; Max-Age=0  ← clears the cookie</div>
+
+  <h2>Step 6: Verifying the Token</h2>
+  <p>File: <code>src/middleware/auth.js</code></p>
+  <pre><code><span class="kw">function</span> <span class="fn">requireAuth</span>(req, res, next) {
+  <span class="cmt">// Accepts token from cookie (browser) OR Authorization header (API clients)</span>
+  <span class="kw">const</span> token = req.cookies?.token
+    || req.headers.authorization?.split(<span class="str">' '</span>)[<span class="num">1</span>];
+
+  <span class="kw">if</span> (!token) <span class="kw">return</span> res.<span class="fn">status</span>(<span class="num">401</span>).<span class="fn">json</span>({ error: <span class="str">'Unauthorized'</span> });
+
+  <span class="kw">try</span> {
+    req.user = jwt.<span class="fn">verify</span>(token, JWT_SECRET);
+    <span class="cmt">// Re-check the DB to catch disabled accounts mid-session</span>
+    <span class="kw">const</span> user = checkActive.<span class="fn">get</span>(req.user.id);
+    <span class="kw">if</span> (!user || user.is_active === <span class="num">0</span> || user.is_deleted === <span class="num">1</span>) {
+      <span class="kw">return</span> res.<span class="fn">status</span>(<span class="num">401</span>).<span class="fn">json</span>({ error: <span class="str">'Account disabled'</span> });
+    }
+    <span class="fn">next</span>();
+  } <span class="kw">catch</span> {
+    res.<span class="fn">status</span>(<span class="num">401</span>).<span class="fn">json</span>({ error: <span class="str">'Invalid token'</span> });
+  }
+}</code></pre>
+
+  <h2>The Change Password Flow</h2>
+  <pre><code><span class="kw">function</span> <span class="fn">changePassword</span>(userId, { current_password, new_password }) {
+  <span class="kw">if</span> (!new_password || new_password.length < <span class="num">6</span>) {
+    <span class="kw">throw new</span> <span class="fn">ServiceError</span>(<span class="num">400</span>, <span class="str">'New password must be at least 6 characters'</span>);
+  }
+  <span class="kw">const</span> user = userRepo.<span class="fn">findById</span>(userId);
+  <span class="cmt">// Must verify the current password before allowing a change</span>
+  <span class="kw">if</span> (!bcrypt.<span class="fn">compareSync</span>(current_password, user.password_hash)) {
+    <span class="kw">throw new</span> <span class="fn">ServiceError</span>(<span class="num">401</span>, <span class="str">'Current password is wrong'</span>);
+  }
+  <span class="kw">const</span> hash = bcrypt.<span class="fn">hashSync</span>(new_password, <span class="num">10</span>);
+  userRepo.<span class="fn">updatePassword</span>(userId, hash);
+  <span class="cmt">// Also sets must_change_password = 0 in the DB</span>
+  <span class="kw">return</span> { ok: <span class="kw">true</span> };
+}</code></pre>
+
+  <h2>Security Checklist for This System</h2>
+  <table>
+    <tr><th>Threat</th><th>Mitigation</th></tr>
+    <tr><td>Password theft from DB leak</td><td>bcrypt hash — can't reverse engineer the password</td></tr>
+    <tr><td>Brute force login</td><td>bcrypt cost factor 10 makes each check slow (~100ms)</td></tr>
+    <tr><td>Username enumeration</td><td>Same error message for "no such user" and "wrong password"</td></tr>
+    <tr><td>Token theft via XSS</td><td>httpOnly cookie — JavaScript can't read it</td></tr>
+    <tr><td>CSRF attacks</td><td>sameSite: 'lax' prevents cross-site cookie submission</td></tr>
+    <tr><td>Token forgery</td><td>HMAC signature using JWT_SECRET — impossible without the secret</td></tr>
+    <tr><td>Disabled account using valid token</td><td>DB check on every request in requireAuth</td></tr>
+    <tr><td>SQL injection</td><td>Prepared statements — values never interpolated into SQL</td></tr>
+  </table>
+
+  <div class="page-nav">
+    <a href="08-helpers-utils.html">← Helpers & Utils</a>
+    <a href="10-complete-walkthrough.html">Next: Complete Walkthrough →</a>
+  </div>
+</main>
+</body>
+</html>

@@ -1,0 +1,230 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Lesson 08 — Helpers & Utilities</title>
+<link rel="stylesheet" href="_shared.css">
+</head>
+<body>
+
+<nav>
+  <div class="logo"><a href="index.html">Backend Learning Hub</a><span>IT Project Management</span></div>
+  <div class="section-label">Lessons</div>
+  <a href="01-architecture.html"><span class="num">01</span> Architecture</a>
+  <a href="02-request-lifecycle.html"><span class="num">02</span> Request Lifecycle</a>
+  <a href="03-entry-point.html"><span class="num">03</span> Entry Point</a>
+  <a href="04-middleware.html"><span class="num">04</span> Middleware</a>
+  <a href="05-routes.html"><span class="num">05</span> Routes Layer</a>
+  <a href="06-services.html"><span class="num">06</span> Services Layer</a>
+  <a href="07-repositories.html"><span class="num">07</span> Repositories Layer</a>
+  <a href="08-helpers-utils.html" class="active"><span class="num">08</span> Helpers & Utils</a>
+  <a href="09-auth-deep-dive.html"><span class="num">09</span> Auth Deep Dive</a>
+  <a href="10-complete-walkthrough.html"><span class="num">10</span> Complete Walkthrough</a>
+  <a href="11-database.html"><span class="num">11</span> Database & Schema</a>
+  <a href="12-tests.html"><span class="num">12</span> Testing</a>
+</nav>
+
+<main>
+  <h1>🔧 Helpers & Utilities</h1>
+  <p class="subtitle">Four small but crucial files that are used everywhere in the codebase. Understanding them will make you much faster at reading service and route code.</p>
+
+  <h2>The Four Helper Files</h2>
+  <table>
+    <tr><th>File</th><th>Purpose</th><th>Used by</th></tr>
+    <tr><td>src/db/helpers.js</td><td>Shared database operations (audit trail, responsibles, etc.)</td><td>All service files</td></tr>
+    <tr><td>src/utils/serviceError.js</td><td>Custom error class with HTTP status code</td><td>All service files</td></tr>
+    <tr><td>src/utils/routeUtils.js</td><td>wrap() — removes try/catch boilerplate from routes</td><td>All route files</td></tr>
+    <tr><td>src/db/schema.js</td><td>Database connection, table creation, migrations</td><td>All repository files</td></tr>
+  </table>
+
+  <h2>1. ServiceError — Custom Error With HTTP Status</h2>
+  <p>File: <code>src/utils/serviceError.js</code></p>
+
+  <pre><code><span class="cmt">// Extends the built-in Error class to add an HTTP status code</span>
+<span class="kw">class</span> ServiceError <span class="kw">extends</span> Error {
+  <span class="fn">constructor</span>(status, message) {
+    <span class="fn">super</span>(message);    <span class="cmt">// sets this.message</span>
+    <span class="kw">this</span>.status = status;  <span class="cmt">// adds this.status (e.g. 404)</span>
+  }
+}
+
+module.exports = ServiceError;</code></pre>
+
+  <p>Without <code>ServiceError</code>, you couldn't tell a route handler "respond with 404". Plain JavaScript <code>Error</code> has no concept of HTTP. By extending it with a <code>status</code> property, the <code>wrap()</code> function can read it and send the right HTTP code:</p>
+
+  <pre><code><span class="cmt">// In a service:</span>
+<span class="kw">throw new</span> <span class="fn">ServiceError</span>(<span class="num">404</span>, <span class="str">'Project not found'</span>);
+<span class="cmt">// err.status = 404, err.message = 'Project not found'
+
+// In wrap():</span>
+res.<span class="fn">status</span>(err.status || <span class="num">500</span>).<span class="fn">json</span>({ error: err.message });
+<span class="cmt">// sends: HTTP 404 { "error": "Project not found" }</span></code></pre>
+
+  <h3>What happens with a regular Error?</h3>
+  <pre><code><span class="kw">throw new</span> Error(<span class="str">'Something broke'</span>);
+<span class="cmt">// err.status is undefined
+// wrap(): err.status || 500 → 500
+// sends: HTTP 500 { "error": "Something broke" }</span></code></pre>
+
+  <h2>2. wrap() — The Route Error Handler</h2>
+  <p>File: <code>src/utils/routeUtils.js</code></p>
+
+  <pre><code><span class="kw">function</span> <span class="fn">wrap</span>(statusCode, fn) {
+  <span class="cmt">// Returns Express middleware: (req, res) => { ... }</span>
+  <span class="kw">return</span> (req, res) =&gt; {
+    <span class="kw">try</span> {
+      <span class="cmt">// fn(req) calls the service function
+      // The return value (data) is sent as JSON with the success status code</span>
+      res.<span class="fn">status</span>(statusCode).<span class="fn">json</span>(<span class="fn">fn</span>(req));
+    } <span class="kw">catch</span> (err) {
+      <span class="cmt">// ServiceError has .status; plain Error doesn't (falls back to 500)</span>
+      res.<span class="fn">status</span>(err.status || <span class="num">500</span>).<span class="fn">json</span>({ error: err.message });
+    }
+  };
+}
+
+module.exports = { wrap };</code></pre>
+
+  <div class="callout info"><div class="callout-icon"></div><p>Notice that <code>wrap()</code> returns a <strong>function</strong> — it doesn't run immediately. Express stores that returned function and calls it later when a request arrives. This is the same "higher-order function" pattern as <code>requireRole()</code>.</p></div>
+
+  <h3>The Login Route Exception</h3>
+  <p>The login route can't use <code>wrap()</code> because it needs to set a cookie before sending the response. Only the login handler needs this special treatment:</p>
+  <pre><code><span class="cmt">// Login can't use wrap() — needs to set a cookie</span>
+router.<span class="fn">post</span>(<span class="str">'/login'</span>, (req, res) =&gt; {
+  <span class="kw">try</span> {
+    <span class="kw">const</span> { token, user } = authService.<span class="fn">login</span>(req.body);
+    res.<span class="fn">cookie</span>(<span class="str">'token'</span>, token, { httpOnly: <span class="kw">true</span>, sameSite: <span class="str">'lax'</span>, maxAge: <span class="num">8</span> * <span class="num">60</span> * <span class="num">60</span> * <span class="num">1000</span> });
+    res.<span class="fn">json</span>({ token, user });
+  } <span class="kw">catch</span> (err) {
+    res.<span class="fn">status</span>(err.status || <span class="num">500</span>).<span class="fn">json</span>({ error: err.message });
+  }
+});
+
+<span class="cmt">// Everything else uses wrap()</span>
+router.<span class="fn">get</span>(<span class="str">'/me'</span>, requireAuth, <span class="fn">wrap</span>(<span class="num">200</span>, req =&gt; authService.<span class="fn">getProfile</span>(req.user.id)));</code></pre>
+
+  <h2>3. db/helpers.js — Shared Database Operations</h2>
+  <p>File: <code>src/db/helpers.js</code></p>
+  <p>These are operations that would otherwise be duplicated across multiple service files. Every service that needs an audit trail or has responsible people calls these helpers.</p>
+
+  <pre><code><span class="kw">const</span> db = <span class="fn">require</span>(<span class="str">'./schema'</span>);
+
+<span class="cmt">// ── recordStatusChange() ───────────────────────────────────────
+// Called every time an entity's status changes.
+// Skips recording if the status didn't actually change.</span>
+<span class="kw">function</span> <span class="fn">recordStatusChange</span>(entityType, entityId, fromStatus, toStatus, userId) {
+  <span class="kw">if</span> (fromStatus === toStatus) <span class="kw">return</span>;  <span class="cmt">// no-op</span>
+  <span class="kw">try</span> {
+    db.<span class="fn">prepare</span>(<span class="str">`INSERT INTO status_history
+      (entity_type, entity_id, from_status, to_status, changed_by)
+      VALUES (?, ?, ?, ?, ?)`</span>)
+      .<span class="fn">run</span>(entityType, entityId, fromStatus ?? <span class="kw">null</span>, toStatus, userId ?? <span class="kw">null</span>);
+  } <span class="kw">catch</span> (err) {
+    console.<span class="fn">error</span>(<span class="str">'[status_history] insert failed:'</span>, err.message);
+    <span class="cmt">// Non-fatal: a failed audit log should not break the main operation</span>
+  }
+}
+
+<span class="cmt">// ── recordFieldChange() ───────────────────────────────────────
+// Like recordStatusChange but for specific fields (e.g., due_date).</span>
+<span class="kw">function</span> <span class="fn">recordFieldChange</span>(entityType, entityId, field, fromValue, toValue, userId) {
+  <span class="kw">if</span> (fromValue === toValue) <span class="kw">return</span>;
+  <span class="kw">try</span> {
+    db.<span class="fn">prepare</span>(<span class="str">`INSERT INTO status_history
+      (entity_type, entity_id, field, from_status, to_status, changed_by)
+      VALUES (?, ?, ?, ?, ?, ?)`</span>)
+      .<span class="fn">run</span>(entityType, entityId, field, fromValue ?? <span class="kw">null</span>, toValue ?? <span class="str">''</span>, userId ?? <span class="kw">null</span>);
+  } <span class="kw">catch</span> (err) {
+    console.<span class="fn">error</span>(<span class="str">'[status_history] field change failed:'</span>, err.message);
+  }
+}
+
+<span class="cmt">// ── setResponsibles() ─────────────────────────────────────────
+// Replace the entire list of responsible people for an entity.
+// Strategy: DELETE all existing → INSERT the new ones.
+// Called for projects, ongoing-tasks, etc.</span>
+<span class="kw">function</span> <span class="fn">setResponsibles</span>(table, fk, id, personnelIds) {
+  db.<span class="fn">prepare</span>(<span class="str">`DELETE FROM <span class="var">${table}</span> WHERE <span class="var">${fk}</span> = ?`</span>).<span class="fn">run</span>(id);
+  <span class="kw">const</span> insert = db.<span class="fn">prepare</span>(<span class="str">`INSERT INTO <span class="var">${table}</span> (<span class="var">${fk}</span>, personnel_id) VALUES (?, ?)`</span>);
+  personnelIds.<span class="fn">forEach</span>(pid =&gt; insert.<span class="fn">run</span>(id, pid));
+}
+
+<span class="cmt">// ── setSections() ─────────────────────────────────────────────
+// Replace the list of sections for an entity (purchases, tenders, contracts).</span>
+<span class="kw">function</span> <span class="fn">setSections</span>(table, fkCol, id, sectionIds) {
+  db.<span class="fn">prepare</span>(<span class="str">`DELETE FROM <span class="var">${table}</span> WHERE <span class="var">${fkCol}</span> = ?`</span>).<span class="fn">run</span>(id);
+  <span class="kw">const</span> insert = db.<span class="fn">prepare</span>(<span class="str">`INSERT INTO <span class="var">${table}</span> (<span class="var">${fkCol}</span>, section_id) VALUES (?, ?)`</span>);
+  sectionIds.<span class="fn">forEach</span>(sid =&gt; insert.<span class="fn">run</span>(id, sid));
+}
+
+<span class="cmt">// ── isWithinDeletionWindow() ──────────────────────────────────
+// Returns true if the entity was created less than 10 minutes ago.
+// Used to enforce the "10-minute delete window" business rule.</span>
+<span class="kw">function</span> <span class="fn">isWithinDeletionWindow</span>(createdAt) {
+  <span class="cmt">// SQLite stores timestamps without timezone. We append 'Z' to tell
+  // JavaScript to treat it as UTC, not local time.</span>
+  <span class="kw">const</span> ageMs = Date.<span class="fn">now</span>() - <span class="kw">new</span> Date(createdAt + <span class="str">'Z'</span>).<span class="fn">getTime</span>();
+  <span class="kw">return</span> ageMs &lt;= <span class="num">10</span> * <span class="num">60</span> * <span class="num">1000</span>;  <span class="cmt">// 10 minutes in milliseconds</span>
+}
+
+module.exports = { recordStatusChange, recordFieldChange, setResponsibles, setSections, isWithinDeletionWindow };</code></pre>
+
+  <h2>How the Audit Trail Works</h2>
+  <p>Every status change and important field change is written to the <code>status_history</code> table. Here's what the records look like:</p>
+
+  <table>
+    <tr><th>entity_type</th><th>entity_id</th><th>field</th><th>from_status</th><th>to_status</th><th>changed_by</th></tr>
+    <tr><td>project</td><td>5</td><td>null</td><td>null</td><td>not_started</td><td>3 (user ID)</td></tr>
+    <tr><td>project</td><td>5</td><td>null</td><td>not_started</td><td>in_progress</td><td>3</td></tr>
+    <tr><td>project</td><td>5</td><td>due_date</td><td>2024-01-01</td><td>2024-03-01</td><td>3</td></tr>
+    <tr><td>project</td><td>5</td><td>null</td><td>in_progress</td><td>completed</td><td>7</td></tr>
+  </table>
+
+  <p>The <code>GET /api/projects/:id/history</code> endpoint reads this table and returns the full timeline for any project.</p>
+
+  <h2>The setResponsibles Pattern</h2>
+  <p>When you update who is responsible for a project, you could try to add/remove individual people. But it's simpler to just wipe the list and rebuild it:</p>
+  <pre><code><span class="cmt">// Before: project 5 is assigned to personnel [2, 4]
+// After the update, we want personnel [2, 6]
+
+// Delete approach (calculate diff — complex):
+DELETE FROM project_responsibles WHERE project_id = 5 AND personnel_id = 4;
+INSERT INTO project_responsibles (project_id, personnel_id) VALUES (5, 6);
+
+// Replace-all approach (simple):
+DELETE FROM project_responsibles WHERE project_id = 5;  ← wipe
+INSERT INTO project_responsibles (project_id, personnel_id) VALUES (5, 2);  ← rebuild
+INSERT INTO project_responsibles (project_id, personnel_id) VALUES (5, 6);</code></pre>
+  <p>The replace-all approach is simpler and has the same end result. For small lists of people, the performance difference is negligible.</p>
+
+  <h2>4. db/schema.js — Database Connection</h2>
+  <p>File: <code>src/db/schema.js</code></p>
+  <p>This file creates the SQLite connection and initializes the schema. Every repository imports it to get the database object:</p>
+  <pre><code><span class="kw">const</span> Database = <span class="fn">require</span>(<span class="str">'better-sqlite3'</span>);
+<span class="kw">const</span> path = <span class="fn">require</span>(<span class="str">'path'</span>);
+
+<span class="cmt">// Open (or create) the database file</span>
+<span class="kw">const</span> db = <span class="kw">new</span> <span class="fn">Database</span>(path.<span class="fn">join</span>(__dirname, <span class="str">'../../data/it_pm.db'</span>));
+
+<span class="cmt">// Enable Write-Ahead Logging — better performance for concurrent reads</span>
+db.<span class="fn">pragma</span>(<span class="str">'journal_mode = WAL'</span>);
+
+<span class="cmt">// Enforce foreign key constraints (SQLite disables them by default!)</span>
+db.<span class="fn">pragma</span>(<span class="str">'foreign_keys = ON'</span>);
+
+<span class="cmt">// Create all tables if they don't exist
+// ... (many CREATE TABLE IF NOT EXISTS statements)
+
+// Export the single connection object</span>
+module.exports = db;</code></pre>
+
+  <div class="callout info"><div class="callout-icon"></div><p>Because Node.js caches modules, every file that does <code>require('../db/schema')</code> receives the <strong>same</strong> database connection object. You don't need to worry about managing multiple connections.</p></div>
+
+  <div class="page-nav">
+    <a href="07-repositories.html">← Repositories Layer</a>
+    <a href="09-auth-deep-dive.html">Next: Auth Deep Dive →</a>
+  </div>
+</main>
+</body>
+</html>

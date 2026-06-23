@@ -1,0 +1,147 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Lesson 01 — Architecture Overview</title>
+<link rel="stylesheet" href="_shared.css">
+</head>
+<body>
+
+<nav>
+  <div class="logo"><a href="index.html">Backend Learning Hub</a><span>IT Project Management</span></div>
+  <div class="section-label">Lessons</div>
+  <a href="01-architecture.html" class="active"><span class="num">01</span> Architecture</a>
+  <a href="02-request-lifecycle.html"><span class="num">02</span> Request Lifecycle</a>
+  <a href="03-entry-point.html"><span class="num">03</span> Entry Point</a>
+  <a href="04-middleware.html"><span class="num">04</span> Middleware</a>
+  <a href="05-routes.html"><span class="num">05</span> Routes Layer</a>
+  <a href="06-services.html"><span class="num">06</span> Services Layer</a>
+  <a href="07-repositories.html"><span class="num">07</span> Repositories Layer</a>
+  <a href="08-helpers-utils.html"><span class="num">08</span> Helpers & Utils</a>
+  <a href="09-auth-deep-dive.html"><span class="num">09</span> Auth Deep Dive</a>
+  <a href="10-complete-walkthrough.html"><span class="num">10</span> Complete Walkthrough</a>
+  <a href="11-database.html"><span class="num">11</span> Database & Schema</a>
+  <a href="12-tests.html"><span class="num">12</span> Testing</a>
+</nav>
+
+<main>
+  <h1>🏗️ Architecture Overview</h1>
+  <p class="subtitle">Before touching a single line of code, you need a mental map of how everything fits together. This lesson explains the folder structure and the four-layer architecture that every request travels through.</p>
+
+  <h2>The Big Picture</h2>
+  <p>The backend follows <strong>Clean Architecture</strong> — a pattern where code is split into layers, each with a single responsibility. A request enters at the top (HTTP), passes through each layer, and a response bubbles back up.</p>
+
+  <div class="diagram">┌──────────────────────────────────────────────────────┐
+│                  HTTP Request arrives                │
+└──────────────────────┬───────────────────────────────┘
+                       │
+              ┌────────▼────────┐
+              │  <span class="hl">Route Handler</span>   │  ← src/routes/*.js
+              │  (what URL?)    │    decides which code to run
+              └────────┬────────┘
+                       │
+              ┌────────▼────────┐
+              │   <span class="hl">Middleware</span>    │  ← src/middleware/auth.js
+              │  (allowed in?)  │    checks JWT, roles
+              └────────┬────────┘
+                       │
+              ┌────────▼────────┐
+              │    <span class="hl">Service</span>      │  ← src/services/*.js
+              │  (is it valid?) │    business logic + rules
+              └────────┬────────┘
+                       │
+              ┌────────▼────────┐
+              │  <span class="hl">Repository</span>    │  ← src/repositories/*.js
+              │  (get the data) │    SQL queries only
+              └────────┬────────┘
+                       │
+              ┌────────▼────────┐
+              │   <span class="hl">SQLite DB</span>     │  ← data/it_pm.db
+              │                 │    the actual data store
+              └─────────────────┘</div>
+
+  <h2>The Folder Structure</h2>
+  <p>Here is every folder inside <code>backend/</code> and what lives there:</p>
+
+  <pre><code>backend/
+├── <span class="hl">data/</span>                    ← The database lives here (a single file!)
+│   └── it_pm.db             ← Your entire database in one .db file
+│
+├── <span class="hl">src/</span>                     ← ALL your application code
+│   ├── server.js            ← Starts the HTTP server on port 3000
+│   ├── app.js               ← Configures Express (middleware, routes)
+│   │
+│   ├── <span class="hl">middleware/</span>          ← Code that runs on EVERY matching request
+│   │   └── auth.js          ← JWT token checker + role guard
+│   │
+│   ├── <span class="hl">routes/</span>              ← "Which URL maps to what?" (10 files)
+│   │   ├── auth.js          ← /api/auth/*
+│   │   ├── projects.js      ← /api/projects/*
+│   │   ├── purchases.js     ← /api/purchases/*
+│   │   └── ...              ← one file per domain
+│   │
+│   ├── <span class="hl">services/</span>            ← Business logic (10 files)
+│   │   ├── authService.js   ← login, logout, change-password
+│   │   ├── projectService.js← project rules (who can edit, validate, audit)
+│   │   └── ...              ← one file per domain
+│   │
+│   ├── <span class="hl">repositories/</span>        ← Database access (10 files)
+│   │   ├── userRepository.js← SQL for users table
+│   │   ├── projectRepository.js← SQL for projects table
+│   │   └── ...              ← one file per domain
+│   │
+│   ├── <span class="hl">db/</span>                  ← Database setup
+│   │   ├── schema.js        ← Creates tables, runs migrations
+│   │   └── helpers.js       ← Shared DB operations (audit trail, etc.)
+│   │
+│   └── <span class="hl">utils/</span>              ← Small reusable helpers
+│       ├── routeUtils.js    ← wrap() — removes try/catch boilerplate
+│       └── serviceError.js  ← Custom error class with HTTP status code
+│
+└── <span class="hl">tests/</span>                   ← Automated tests (Jest)</code></pre>
+
+  <h2>The Four Layers — In Plain English</h2>
+
+  <h3>Layer 1 — Routes (<code>src/routes/</code>)</h3>
+  <p>Think of routes as a <strong>receptionist at the front desk</strong>. They answer: <em>"Which URL did you request? What HTTP method?"</em> and direct you to the right place. They read data from the request (body, URL params, query string) and send the response back. They do NOT contain any business logic.</p>
+  <div class="callout info"><div class="callout-icon"></div><p><strong>Routes own the HTTP layer.</strong> They speak HTTP: status codes, cookies, headers. Every other layer is completely unaware of HTTP.</p></div>
+
+  <h3>Layer 2 — Middleware (<code>src/middleware/</code>)</h3>
+  <p>Middleware is code that <strong>runs in between</strong> the request arriving and your handler running. Think of it as a security checkpoint. The auth middleware asks: <em>"Do you have a valid JWT token? Are you allowed to do this?"</em>. If not, it stops the request right there.</p>
+
+  <h3>Layer 3 — Services (<code>src/services/</code>)</h3>
+  <p>Services are the <strong>brain of the application</strong>. They answer: <em>"Is this request valid? Does this user have permission? What rules apply here?"</em>. They coordinate between repositories and enforce business rules. This is where you'd find logic like: "only the section_head of section 3 can edit section 3's projects".</p>
+  <div class="callout tip"><div class="callout-icon"></div><p><strong>Services never touch HTTP.</strong> They don't know about <code>req</code>, <code>res</code>, status codes, or cookies. They just receive plain values and return plain values (or throw a ServiceError).</p></div>
+
+  <h3>Layer 4 — Repositories (<code>src/repositories/</code>)</h3>
+  <p>Repositories are the <strong>database librarians</strong>. They only know one thing: SQL. They receive values, run queries, and return raw rows. No business logic. No role checks. Just data access. This separation means if you ever switch from SQLite to PostgreSQL, you only change the repositories.</p>
+
+  <h2>Why Split Into Layers?</h2>
+  <table>
+    <tr><th>Problem without layers</th><th>How layers solve it</th></tr>
+    <tr><td>SQL mixed with role checks mixed with HTTP responses</td><td>Each concern lives in exactly one place</td></tr>
+    <tr><td>Can't test business logic without starting a server</td><td>Services can be tested with plain function calls</td></tr>
+    <tr><td>Changing the database breaks route handlers</td><td>Routes never touch SQL — only repositories do</td></tr>
+    <tr><td>Duplicated validation logic everywhere</td><td>One service = one place for all rules</td></tr>
+  </table>
+
+  <h2>The "One File Per Domain" Pattern</h2>
+  <p>Notice that routes, services, and repositories all have the same set of files: <strong>auth, projects, purchases, tenders, contracts, etc.</strong>. This is intentional. Each domain (projects, purchases…) has exactly one file in each layer. When you work on "purchases", you always know which three files to look at:</p>
+  <ul>
+    <li><code>src/routes/purchases.js</code> — the HTTP endpoints</li>
+    <li><code>src/services/purchaseService.js</code> — the business rules</li>
+    <li><code>src/repositories/purchaseRepository.js</code> — the SQL</li>
+  </ul>
+
+  <h2>The Database: SQLite</h2>
+  <p>Unlike MySQL or PostgreSQL, <strong>SQLite is a single file</strong> on your disk (<code>data/it_pm.db</code>). There's no separate database server to install or configure. The database is the file. This makes development and deployment extremely simple.</p>
+  <div class="callout warn"><div class="callout-icon"></div><p>SQLite is great for this app's scale. If you had thousands of concurrent users writing at the same time, you'd switch to PostgreSQL. The repository layer makes that migration straightforward.</p></div>
+
+  <div class="page-nav">
+    <a href="index.html">← Home</a>
+    <a href="02-request-lifecycle.html">Next: Request Lifecycle →</a>
+  </div>
+</main>
+</body>
+</html>

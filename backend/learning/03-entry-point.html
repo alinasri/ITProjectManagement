@@ -1,0 +1,165 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Lesson 03 — Entry Point: server.js & app.js</title>
+<link rel="stylesheet" href="_shared.css">
+</head>
+<body>
+
+<nav>
+  <div class="logo"><a href="index.html">Backend Learning Hub</a><span>IT Project Management</span></div>
+  <div class="section-label">Lessons</div>
+  <a href="01-architecture.html"><span class="num">01</span> Architecture</a>
+  <a href="02-request-lifecycle.html"><span class="num">02</span> Request Lifecycle</a>
+  <a href="03-entry-point.html" class="active"><span class="num">03</span> Entry Point</a>
+  <a href="04-middleware.html"><span class="num">04</span> Middleware</a>
+  <a href="05-routes.html"><span class="num">05</span> Routes Layer</a>
+  <a href="06-services.html"><span class="num">06</span> Services Layer</a>
+  <a href="07-repositories.html"><span class="num">07</span> Repositories Layer</a>
+  <a href="08-helpers-utils.html"><span class="num">08</span> Helpers & Utils</a>
+  <a href="09-auth-deep-dive.html"><span class="num">09</span> Auth Deep Dive</a>
+  <a href="10-complete-walkthrough.html"><span class="num">10</span> Complete Walkthrough</a>
+  <a href="11-database.html"><span class="num">11</span> Database & Schema</a>
+  <a href="12-tests.html"><span class="num">12</span> Testing</a>
+</nav>
+
+<main>
+  <h1>🚀 Entry Point: server.js & app.js</h1>
+  <p class="subtitle">When you run <code>npm start</code>, Node.js starts at one file and executes it top-to-bottom. Let's trace exactly what happens from that first line of code to a running server.</p>
+
+  <h2>How Node.js Starts</h2>
+  <p>Running <code>node src/server.js</code> tells Node: "start executing this file". Node reads it line by line. When it hits a <code>require()</code>, it pauses, loads and runs that other file, and resumes. This is how the whole application bootstraps.</p>
+
+  <div class="callout info"><div class="callout-icon"></div><p><strong>CommonJS modules:</strong> This project uses <code>require()</code> to import and <code>module.exports</code> to export. This is the older Node.js module system (as opposed to ES Modules which use <code>import/export</code>).</p></div>
+
+  <h2>server.js — The Starting Gun</h2>
+  <p>File: <code>src/server.js</code></p>
+
+  <pre><code><span class="kw">const</span> app = <span class="fn">require</span>(<span class="str">'./app'</span>);  <span class="cmt">// loads app.js and gets the Express app</span>
+
+<span class="cmt">// process.env.PORT — if the hosting environment set a PORT variable, use it.
+// Otherwise fall back to 3000 for local development.</span>
+<span class="kw">const</span> PORT = process.env.PORT || <span class="num">3000</span>;
+
+<span class="cmt">// app.listen() binds to a TCP port and starts accepting connections.
+// The callback fires once, confirming the server is ready.</span>
+app.<span class="fn">listen</span>(PORT, () =&gt; console.<span class="fn">log</span>(<span class="str">`Server running on port <span class="var">${PORT}</span>`</span>));</code></pre>
+
+  <p>That's it. Three lines. Its only job is to start the server. All the real configuration is in <code>app.js</code>.</p>
+
+  <h3>Why Is This Separate From app.js?</h3>
+  <p>Tests need to import the Express <code>app</code> to make test requests against it — but they should <strong>not</strong> bind to a real port (port conflicts, test isolation). By keeping port-binding in <code>server.js</code>, tests can import <code>app.js</code> directly and use <code>supertest</code> to make fake HTTP requests without a network.</p>
+
+  <pre><code><span class="cmt">// tests/auth.test.js — imports app, never starts a real server</span>
+<span class="kw">const</span> request = <span class="fn">require</span>(<span class="str">'supertest'</span>);
+<span class="kw">const</span> app = <span class="fn">require</span>(<span class="str">'../src/app'</span>);
+
+test(<span class="str">'POST /api/auth/login'</span>, <span class="kw">async</span> () =&gt; {
+  <span class="kw">const</span> res = <span class="kw">await</span> request(app).<span class="fn">post</span>(<span class="str">'/api/auth/login'</span>).<span class="fn">send</span>({ username: <span class="str">'admin'</span>, password: <span class="str">'...'</span> });
+  expect(res.status).<span class="fn">toBe</span>(<span class="num">200</span>);
+});</code></pre>
+
+  <h2>app.js — The Express Configuration</h2>
+  <p>File: <code>src/app.js</code></p>
+
+  <pre><code><span class="kw">const</span> express = <span class="fn">require</span>(<span class="str">'express'</span>);      <span class="cmt">// the web framework</span>
+<span class="kw">const</span> cookieParser = <span class="fn">require</span>(<span class="str">'cookie-parser'</span>); <span class="cmt">// reads Cookie header</span>
+<span class="kw">const</span> cors = <span class="fn">require</span>(<span class="str">'cors'</span>);              <span class="cmt">// cross-origin headers</span>
+<span class="kw">const</span> path = <span class="fn">require</span>(<span class="str">'path'</span>);             <span class="cmt">// Node built-in: file paths</span>
+<span class="kw">const</span> fs = <span class="fn">require</span>(<span class="str">'fs'</span>);               <span class="cmt">// Node built-in: file system</span>
+
+<span class="kw">const</span> app = <span class="fn">express</span>();  <span class="cmt">// creates the Express application object</span>
+
+<span class="cmt">// ── GLOBAL MIDDLEWARE ──────────────────────────────────────────
+// These run on EVERY request before any route handler</span>
+
+app.<span class="fn">use</span>(<span class="fn">cors</span>({ origin: <span class="kw">true</span>, credentials: <span class="kw">true</span> }));
+app.<span class="fn">use</span>(express.<span class="fn">json</span>());
+app.<span class="fn">use</span>(<span class="fn">cookieParser</span>());
+
+<span class="cmt">// ── ROUTES ────────────────────────────────────────────────────
+// Mount each domain's router at its URL prefix</span>
+
+app.<span class="fn">use</span>(<span class="str">'/api/auth'</span>,         <span class="fn">require</span>(<span class="str">'./routes/auth'</span>));
+app.<span class="fn">use</span>(<span class="str">'/api/sections'</span>,     <span class="fn">require</span>(<span class="str">'./routes/sections'</span>));
+app.<span class="fn">use</span>(<span class="str">'/api/users'</span>,        <span class="fn">require</span>(<span class="str">'./routes/users'</span>));
+app.<span class="fn">use</span>(<span class="str">'/api/personnel'</span>,   <span class="fn">require</span>(<span class="str">'./routes/personnel'</span>));
+app.<span class="fn">use</span>(<span class="str">'/api/ongoing-tasks'</span>,<span class="fn">require</span>(<span class="str">'./routes/ongoingTasks'</span>));
+app.<span class="fn">use</span>(<span class="str">'/api/projects'</span>,    <span class="fn">require</span>(<span class="str">'./routes/projects'</span>));
+app.<span class="fn">use</span>(<span class="str">'/api/custom-columns'</span>,<span class="fn">require</span>(<span class="str">'./routes/customColumns'</span>));
+app.<span class="fn">use</span>(<span class="str">'/api/purchases'</span>,   <span class="fn">require</span>(<span class="str">'./routes/purchases'</span>));
+app.<span class="fn">use</span>(<span class="str">'/api/tenders'</span>,     <span class="fn">require</span>(<span class="str">'./routes/tenders'</span>));
+app.<span class="fn">use</span>(<span class="str">'/api/contracts'</span>,   <span class="fn">require</span>(<span class="str">'./routes/contracts'</span>));
+app.<span class="fn">use</span>(<span class="str">'/api/report'</span>,      <span class="fn">require</span>(<span class="str">'./routes/report'</span>));
+
+<span class="cmt">// ── PRODUCTION STATIC FILES ────────────────────────────────────
+// Serve the compiled React app if the /public folder exists</span>
+
+<span class="kw">const</span> publicDir = path.<span class="fn">join</span>(__dirname, <span class="str">'../public'</span>);
+<span class="kw">if</span> (fs.<span class="fn">existsSync</span>(publicDir)) {
+  app.<span class="fn">use</span>(express.<span class="fn">static</span>(publicDir));
+  app.<span class="fn">get</span>(<span class="str">'*'</span>, (req, res) =&gt; res.<span class="fn">sendFile</span>(path.<span class="fn">join</span>(publicDir, <span class="str">'index.html'</span>)));
+}
+
+module.exports = app;  <span class="cmt">// export so server.js and tests can import it</span></code></pre>
+
+  <h2>Understanding app.use()</h2>
+  <p><code>app.use(prefix, router)</code> tells Express: "for any request whose URL starts with <code>prefix</code>, hand it to this router". The prefix is stripped before passing to the router.</p>
+
+  <div class="diagram">Request: GET <span class="hl">/api/projects</span>/deadline-changes
+
+app.use(<span class="hl">'/api/projects'</span>, projectsRouter)
+
+                         ↓ strips the prefix
+
+projectsRouter sees: GET <span class="hl">/deadline-changes</span></div>
+
+  <h2>What Does express() Return?</h2>
+  <p><code>express()</code> creates an <strong>application object</strong>. It is a function itself (the request handler) plus a bunch of methods for configuration. When Node's HTTP server receives a connection, it calls this function with <code>(req, res)</code>. Express then runs your middleware and route handlers.</p>
+
+  <h2>The Three Global Middleware</h2>
+
+  <h3>1. CORS</h3>
+  <p>CORS (Cross-Origin Resource Sharing) is a browser security feature. By default, a browser running on <code>localhost:5173</code> (the React dev server) is <strong>blocked</strong> from fetching from <code>localhost:3000</code> (your API) because they are different "origins". The CORS middleware adds special headers telling the browser: "this is allowed".</p>
+  <pre><code>app.<span class="fn">use</span>(<span class="fn">cors</span>({ origin: <span class="kw">true</span>, credentials: <span class="kw">true</span> }));
+<span class="cmt">// origin: true  → allow any origin (fine for dev; restrict in production)
+// credentials: true → allow cookies to be sent cross-origin</span></code></pre>
+
+  <h3>2. express.json()</h3>
+  <p>When a POST or PUT request has a JSON body, the body arrives as raw text bytes. <code>express.json()</code> reads those bytes and parses them into a JavaScript object, putting it in <code>req.body</code>.</p>
+  <pre><code><span class="cmt">// Without express.json(): req.body is undefined
+// With express.json(): req.body = { title: "Network upgrade", status: "in_progress" }</span></code></pre>
+
+  <h3>3. cookieParser()</h3>
+  <p>HTTP requests include a <code>Cookie</code> header that looks like: <code>token=eyJ...; other=value</code>. <code>cookieParser()</code> parses that string into an object at <code>req.cookies</code>.</p>
+  <pre><code><span class="cmt">// Without cookieParser(): req.cookies is undefined
+// With cookieParser(): req.cookies = { token: 'eyJ...' }</span></code></pre>
+
+  <h2>The Package.json Scripts</h2>
+  <pre><code><span class="cmt">// package.json</span>
+{
+  <span class="str">"scripts"</span>: {
+    <span class="str">"start"</span>: <span class="str">"node src/server.js"</span>,      <span class="cmt">// production — run once</span>
+    <span class="str">"dev"</span>:   <span class="str">"nodemon src/server.js"</span>,   <span class="cmt">// development — auto-restarts on file changes</span>
+    <span class="str">"test"</span>:  <span class="str">"jest --runInBand"</span>         <span class="cmt">// run all tests sequentially</span>
+  }
+}</code></pre>
+  <ul>
+    <li><strong>npm start</strong> — runs the server once. If you change a file, you must restart manually.</li>
+    <li><strong>npm run dev</strong> — nodemon watches your files and automatically restarts whenever you save a change.</li>
+    <li><strong>npm test</strong> — runs the Jest test suite. <code>--runInBand</code> means "one test at a time" (prevents database conflicts).</li>
+  </ul>
+
+  <h2>What Happens at require('./db/schema')?</h2>
+  <p>When the repositories are loaded (which happens when routes are loaded via <code>require('./routes/projects')</code>), they all import the database. The database module (<code>src/db/schema.js</code>) connects to SQLite and creates all the tables if they don't exist yet. This happens once, at startup.</p>
+  <div class="callout tip"><div class="callout-icon"></div><p>The database connection is a <strong>singleton</strong> — no matter how many files do <code>require('../db/schema')</code>, Node's module cache ensures it only runs once and returns the same connection object each time.</p></div>
+
+  <div class="page-nav">
+    <a href="02-request-lifecycle.html">← Request Lifecycle</a>
+    <a href="04-middleware.html">Next: Middleware →</a>
+  </div>
+</main>
+</body>
+</html>

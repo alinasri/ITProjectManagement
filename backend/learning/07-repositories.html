@@ -1,0 +1,240 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Lesson 07 — Repositories Layer</title>
+<link rel="stylesheet" href="_shared.css">
+</head>
+<body>
+
+<nav>
+  <div class="logo"><a href="index.html">Backend Learning Hub</a><span>IT Project Management</span></div>
+  <div class="section-label">Lessons</div>
+  <a href="01-architecture.html"><span class="num">01</span> Architecture</a>
+  <a href="02-request-lifecycle.html"><span class="num">02</span> Request Lifecycle</a>
+  <a href="03-entry-point.html"><span class="num">03</span> Entry Point</a>
+  <a href="04-middleware.html"><span class="num">04</span> Middleware</a>
+  <a href="05-routes.html"><span class="num">05</span> Routes Layer</a>
+  <a href="06-services.html"><span class="num">06</span> Services Layer</a>
+  <a href="07-repositories.html" class="active"><span class="num">07</span> Repositories Layer</a>
+  <a href="08-helpers-utils.html"><span class="num">08</span> Helpers & Utils</a>
+  <a href="09-auth-deep-dive.html"><span class="num">09</span> Auth Deep Dive</a>
+  <a href="10-complete-walkthrough.html"><span class="num">10</span> Complete Walkthrough</a>
+  <a href="11-database.html"><span class="num">11</span> Database & Schema</a>
+  <a href="12-tests.html"><span class="num">12</span> Testing</a>
+</nav>
+
+<main>
+  <h1>🗄️ Repositories Layer</h1>
+  <p class="subtitle">Repositories are the only layer that talks to the database. They translate between JavaScript values and SQL. They contain no business logic — just efficient data access.</p>
+
+  <h2>What Is a Prepared Statement?</h2>
+  <p>A prepared statement is SQL that is <strong>compiled once</strong> and then reused many times with different values. Think of it like a form with blank fields:</p>
+
+  <div class="diagram">SELECT * FROM projects WHERE section_id = <span class="hl">?</span> AND is_archived = <span class="hl">?</span>
+                                              ↑               ↑
+                                      placeholder         placeholder
+
+<span class="dim">At module load:</span>    compiled query plan is cached
+<span class="dim">At call time:</span>     fill in: section_id = 2, is_archived = 0  → run query</div>
+
+  <pre><code><span class="cmt">// Prepared once when the module is first loaded:</span>
+<span class="kw">const</span> stmts = {
+  findBySection: db.<span class="fn">prepare</span>(<span class="str">'SELECT * FROM projects WHERE section_id = ? AND is_archived = ? AND is_deleted = 0'</span>),
+  findById: db.<span class="fn">prepare</span>(<span class="str">'SELECT * FROM projects WHERE id = ?'</span>),
+  <span class="cmt">// ... more statements</span>
+};
+
+<span class="cmt">// Used many times — each call just binds different values:</span>
+stmts.findBySection.<span class="fn">all</span>(<span class="num">2</span>, <span class="num">0</span>);  <span class="cmt">// section 2, not archived</span>
+stmts.findBySection.<span class="fn">all</span>(<span class="num">3</span>, <span class="num">0</span>);  <span class="cmt">// section 3, not archived</span></code></pre>
+
+  <div class="callout tip"><div class="callout-icon"></div><p><strong>Two benefits of prepared statements:</strong> (1) Speed — the database parses the SQL only once. (2) Security — values are always treated as data, never as SQL, so SQL injection is impossible.</p></div>
+
+  <h2>better-sqlite3 API: .get(), .all(), .run()</h2>
+  <p>This project uses the <code>better-sqlite3</code> library (synchronous SQLite). Three methods you'll see everywhere:</p>
+  <table>
+    <tr><th>Method</th><th>Returns</th><th>Use for</th></tr>
+    <tr><td>.get(params)</td><td>One row (or undefined)</td><td>Find by ID, find one record</td></tr>
+    <tr><td>.all(params)</td><td>Array of rows</td><td>List queries</td></tr>
+    <tr><td>.run(params)</td><td>{ changes, lastInsertRowid }</td><td>INSERT, UPDATE, DELETE</td></tr>
+  </table>
+  <pre><code>stmts.findById.<span class="fn">get</span>(<span class="num">5</span>)         <span class="cmt">// → { id: 5, title: '...', ... } or undefined</span>
+stmts.findAll.<span class="fn">all</span>(<span class="num">0</span>)          <span class="cmt">// → [{ id:1, ... }, { id:2, ... }, ...]</span>
+stmts.create.<span class="fn">run</span>(<span class="str">'title'</span>, ...) <span class="cmt">// → { changes: 1, lastInsertRowid: 6 }</span></code></pre>
+
+  <h2>The Full projectRepository.js</h2>
+  <p>File: <code>src/repositories/projectRepository.js</code></p>
+
+  <pre><code><span class="kw">const</span> db = <span class="fn">require</span>(<span class="str">'../db/schema'</span>);  <span class="cmt">// single shared DB connection</span>
+
+<span class="cmt">// All SQL compiled once at module load</span>
+<span class="kw">const</span> stmts = {
+  findBySection: db.<span class="fn">prepare</span>(<span class="str">'SELECT * FROM projects WHERE section_id = ? AND is_archived = ? AND is_deleted = 0 ORDER BY row_order, id'</span>),
+  findAll:       db.<span class="fn">prepare</span>(<span class="str">'SELECT * FROM projects WHERE is_archived = ? AND is_deleted = 0 ORDER BY section_id, row_order, id'</span>),
+  findById:      db.<span class="fn">prepare</span>(<span class="str">'SELECT * FROM projects WHERE id = ?'</span>),
+  maxOrder:      db.<span class="fn">prepare</span>(<span class="str">'SELECT COALESCE(MAX(row_order),0) as m FROM projects WHERE section_id = ?'</span>),
+
+  create: db.<span class="fn">prepare</span>(<span class="str">`INSERT INTO projects
+    (title, section_id, status, future_plan, problems, row_order, progress, due_date)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)`</span>),
+
+  update: db.<span class="fn">prepare</span>(<span class="str">`UPDATE projects
+    SET title = ?, status = ?, future_plan = ?, problems = ?,
+        row_order = ?, progress = ?, due_date = ?, updated_at = datetime('now')
+    WHERE id = ?`</span>),
+
+  setArchived: db.<span class="fn">prepare</span>(<span class="str">"UPDATE projects SET is_archived = ?, updated_at = datetime('now') WHERE id = ?"</span>),
+  softDelete:  db.<span class="fn">prepare</span>(<span class="str">'UPDATE projects SET is_deleted = 1 WHERE id = ?'</span>),
+
+  upsertCustom: db.<span class="fn">prepare</span>(<span class="str">`INSERT INTO custom_values (project_id, column_id, value) VALUES (?, ?, ?)
+    ON CONFLICT(project_id, column_id) DO UPDATE SET value = excluded.value`</span>),
+
+  getHistory: db.<span class="fn">prepare</span>(<span class="str">`SELECT sh.*, u.username as changed_by_username
+    FROM status_history sh LEFT JOIN users u ON u.id = sh.changed_by
+    WHERE sh.entity_type = 'project' AND sh.entity_id = ?
+    ORDER BY sh.changed_at DESC`</span>),
+};
+
+<span class="cmt">// ── enrich() ──────────────────────────────────────────────────
+// Attaches responsibles and custom_values to plain project rows.
+// The KEY function — solves the N+1 problem.</span>
+<span class="kw">function</span> <span class="fn">enrich</span>(projects) {
+  <span class="kw">if</span> (projects.length === <span class="num">0</span>) <span class="kw">return</span> [];
+
+  <span class="kw">const</span> ids = projects.<span class="fn">map</span>(p =&gt; p.id);
+  <span class="kw">const</span> placeholders = ids.<span class="fn">map</span>(() =&gt; <span class="str">'?'</span>).<span class="fn">join</span>(<span class="str">','</span>);  <span class="cmt">// "?,?,?" for 3 projects</span>
+
+  <span class="cmt">// ONE query for ALL responsibles across ALL projects</span>
+  <span class="kw">const</span> allResponsibles = db.<span class="fn">prepare</span>(
+    <span class="str">`SELECT pr.project_id, per.id, per.name
+     FROM project_responsibles pr JOIN personnel per ON per.id = pr.personnel_id
+     WHERE pr.project_id IN (<span class="var">${placeholders}</span>) ORDER BY per.name`</span>
+  ).<span class="fn">all</span>(...ids);
+
+  <span class="cmt">// ONE query for ALL custom values across ALL projects</span>
+  <span class="kw">const</span> allCustomValues = db.<span class="fn">prepare</span>(
+    <span class="str">`SELECT cv.project_id, cv.column_id, cv.value, cc.column_name
+     FROM custom_values cv JOIN custom_columns cc ON cc.id = cv.column_id
+     WHERE cv.project_id IN (<span class="var">${placeholders}</span>)`</span>
+  ).<span class="fn">all</span>(...ids);
+
+  <span class="cmt">// Group results into Maps for O(1) lookup
+  // Map: { project_id → [responsible1, responsible2, ...] }</span>
+  <span class="kw">const</span> responsiblesMap = <span class="kw">new</span> Map(ids.<span class="fn">map</span>(id =&gt; [id, []]));
+  <span class="kw">for</span> (<span class="kw">const</span> r <span class="kw">of</span> allResponsibles) {
+    responsiblesMap.<span class="fn">get</span>(r.project_id).<span class="fn">push</span>({ id: r.id, name: r.name });
+  }
+
+  <span class="kw">const</span> customValuesMap = <span class="kw">new</span> Map(ids.<span class="fn">map</span>(id =&gt; [id, []]));
+  <span class="kw">for</span> (<span class="kw">const</span> cv <span class="kw">of</span> allCustomValues) {
+    customValuesMap.<span class="fn">get</span>(cv.project_id).<span class="fn">push</span>({ column_id: cv.column_id, value: cv.value, column_name: cv.column_name });
+  }
+
+  <span class="cmt">// Spread the project + attach the grouped arrays</span>
+  <span class="kw">return</span> projects.<span class="fn">map</span>(p =&gt; ({
+    ...p,
+    responsibles: responsiblesMap.<span class="fn">get</span>(p.id),
+    custom_values: customValuesMap.<span class="fn">get</span>(p.id),
+  }));
+}
+
+<span class="kw">function</span> <span class="fn">findAll</span>({ sectionId, showArchived }) {
+  <span class="kw">if</span> (sectionId) <span class="kw">return</span> stmts.findBySection.<span class="fn">all</span>(sectionId, showArchived);
+  <span class="kw">return</span> stmts.findAll.<span class="fn">all</span>(showArchived);
+}
+
+<span class="kw">function</span> <span class="fn">findById</span>(id) { <span class="kw">return</span> stmts.findById.<span class="fn">get</span>(id); }
+
+<span class="kw">function</span> <span class="fn">create</span>({ title, sectionId, status, future_plan, problems, row_order, progress, due_date }) {
+  <span class="kw">const</span> maxOrder = stmts.maxOrder.<span class="fn">get</span>(sectionId).m;
+  <span class="kw">const</span> result = stmts.create.<span class="fn">run</span>(
+    title, sectionId, status, future_plan, problems,
+    row_order ?? maxOrder + <span class="num">1</span>,  <span class="cmt">// auto-place at end if no row_order given</span>
+    progress, due_date ?? <span class="kw">null</span>
+  );
+  <span class="kw">return</span> <span class="fn">findById</span>(result.lastInsertRowid);  <span class="cmt">// return the new row</span>
+}
+
+<span class="kw">function</span> <span class="fn">update</span>(id, { title, status, future_plan, problems, row_order, progress, due_date }) {
+  stmts.update.<span class="fn">run</span>(title, status, future_plan, problems, row_order, progress, due_date, id);
+  <span class="kw">return</span> <span class="fn">findById</span>(id);  <span class="cmt">// re-fetch to get updated_at timestamp</span>
+}
+
+<span class="kw">function</span> <span class="fn">setArchived</span>(id, archive) { stmts.setArchived.<span class="fn">run</span>(archive, id); }
+<span class="kw">function</span> <span class="fn">softDelete</span>(id) { stmts.softDelete.<span class="fn">run</span>(id); }
+
+<span class="kw">function</span> <span class="fn">upsertCustomValues</span>(projectId, customValues) {
+  customValues.<span class="fn">forEach</span>(({ column_id, value }) =&gt;
+    stmts.upsertCustom.<span class="fn">run</span>(projectId, column_id, value ?? <span class="str">''</span>)
+  );
+}
+
+<span class="kw">function</span> <span class="fn">getHistory</span>(id) { <span class="kw">return</span> stmts.getHistory.<span class="fn">all</span>(id); }
+
+module.exports = { enrich, findAll, findById, create, update, setArchived, softDelete, upsertCustomValues, getHistory };</code></pre>
+
+  <h2>The N+1 Query Problem</h2>
+  <p>This is one of the most common performance mistakes. Imagine you have 50 projects and you want each project with its list of responsible people.</p>
+
+  <div class="callout warn"><div class="callout-icon"></div><p><strong>N+1 Problem:</strong> 1 query to get all projects + 1 query PER PROJECT to get its responsibles = <strong>51 queries</strong> for 50 projects. As you scale, this becomes 1001 queries for 1000 projects.</p></div>
+
+  <div class="diagram"><span class="cmt">❌ N+1 approach (bad):</span>
+SELECT * FROM projects WHERE section_id = 2        ← 1 query (returns 50 rows)
+SELECT * FROM project_responsibles WHERE id = 1    ← 1 query per project
+SELECT * FROM project_responsibles WHERE id = 2
+SELECT * FROM project_responsibles WHERE id = 3
+...50 times...
+Total: <span class="hl">51 queries</span>
+
+<span class="cmt">✅ Bulk approach (used here):</span>
+SELECT * FROM projects WHERE section_id = 2        ← 1 query
+SELECT * FROM project_responsibles WHERE id IN (1,2,3,...50) ← 1 query for ALL
+Total: <span class="hl">2 queries</span></div>
+
+  <p>The <code>enrich()</code> function uses the bulk approach, then organizes results into a Map for O(1) lookup when attaching responsibles to each project.</p>
+
+  <h2>Soft Delete vs Hard Delete</h2>
+  <p>Instead of actually removing rows from the database, this app <strong>marks them as deleted</strong>:</p>
+  <pre><code><span class="cmt">// Hard delete — data is gone forever</span>
+DELETE FROM projects WHERE id = 5;
+
+<span class="cmt">// Soft delete — data is preserved, just hidden</span>
+UPDATE projects SET is_deleted = 1 WHERE id = 5;
+
+<span class="cmt">// All queries filter out soft-deleted rows:</span>
+SELECT * FROM projects WHERE is_deleted = 0 ...
+<span class="cmt">// The deleted project still exists in the DB, just invisible to queries</span></code></pre>
+
+  <p>Why? Soft delete lets you:</p>
+  <ul>
+    <li>Preserve the audit trail (status_history still references the project)</li>
+    <li>Potentially "undelete" if something was deleted by mistake</li>
+    <li>Maintain referential integrity (other records still point to the row)</li>
+  </ul>
+
+  <h2>The Upsert Pattern</h2>
+  <p>An upsert is "insert if not exists, update if it does exist". SQLite's <code>ON CONFLICT ... DO UPDATE</code> does this in one statement:</p>
+  <pre><code>INSERT INTO custom_values (project_id, column_id, value) VALUES (?, ?, ?)
+ON CONFLICT(project_id, column_id)
+DO UPDATE SET value = excluded.value;
+
+<span class="cmt">// If (project_id=5, column_id=2) doesn't exist → INSERT
+// If (project_id=5, column_id=2) already exists → UPDATE value
+// "excluded" refers to the row that would have been inserted</span></code></pre>
+
+  <h2>COALESCE in SQL</h2>
+  <pre><code>SELECT COALESCE(MAX(row_order), 0) as m FROM projects WHERE section_id = ?
+<span class="cmt">// MAX(row_order) returns NULL if there are no rows
+// COALESCE(NULL, 0) returns 0 — safe default</span></code></pre>
+
+  <div class="callout info"><div class="callout-icon"></div><p><strong>Repositories should have no <code>if</code> statements about business rules.</strong> If you see something like "if user is section_head, filter by section" in a repository, it belongs in the service layer instead.</p></div>
+
+  <div class="page-nav">
+    <a href="06-services.html">← Services Layer</a>
+    <a href="08-helpers-utils.html">Next: Helpers & Utils →</a>
+  </div>
+</main>
+</body>
+</html>

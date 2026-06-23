@@ -1,0 +1,227 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Lesson 06 — Services Layer</title>
+<link rel="stylesheet" href="_shared.css">
+</head>
+<body>
+
+<nav>
+  <div class="logo"><a href="index.html">Backend Learning Hub</a><span>IT Project Management</span></div>
+  <div class="section-label">Lessons</div>
+  <a href="01-architecture.html"><span class="num">01</span> Architecture</a>
+  <a href="02-request-lifecycle.html"><span class="num">02</span> Request Lifecycle</a>
+  <a href="03-entry-point.html"><span class="num">03</span> Entry Point</a>
+  <a href="04-middleware.html"><span class="num">04</span> Middleware</a>
+  <a href="05-routes.html"><span class="num">05</span> Routes Layer</a>
+  <a href="06-services.html" class="active"><span class="num">06</span> Services Layer</a>
+  <a href="07-repositories.html"><span class="num">07</span> Repositories Layer</a>
+  <a href="08-helpers-utils.html"><span class="num">08</span> Helpers & Utils</a>
+  <a href="09-auth-deep-dive.html"><span class="num">09</span> Auth Deep Dive</a>
+  <a href="10-complete-walkthrough.html"><span class="num">10</span> Complete Walkthrough</a>
+  <a href="11-database.html"><span class="num">11</span> Database & Schema</a>
+  <a href="12-tests.html"><span class="num">12</span> Testing</a>
+</nav>
+
+<main>
+  <h1>⚙️ Services Layer</h1>
+  <p class="subtitle">Services are the brain. Every business rule, validation, role check, audit log call, and data orchestration lives here. Services are completely unaware of HTTP — they just receive values and return values.</p>
+
+  <h2>The Golden Rule of Services</h2>
+  <div class="callout key"><div class="callout-icon"></div>
+    <p><strong>Services know nothing about HTTP.</strong> No <code>req</code>, no <code>res</code>, no status codes, no cookies. They receive plain JavaScript values (strings, numbers, objects) and return plain JavaScript values. If something goes wrong, they throw a <code>ServiceError</code>. The route layer is responsible for translating that into an HTTP response.</p>
+  </div>
+
+  <h2>The projectService.js — Fully Annotated</h2>
+  <p>File: <code>src/services/projectService.js</code></p>
+
+  <pre><code><span class="kw">const</span> projectRepo = <span class="fn">require</span>(<span class="str">'../repositories/projectRepository'</span>);
+<span class="kw">const</span> { recordStatusChange, recordFieldChange, setResponsibles, isWithinDeletionWindow }
+  = <span class="fn">require</span>(<span class="str">'../db/helpers'</span>);
+<span class="kw">const</span> ServiceError = <span class="fn">require</span>(<span class="str">'../utils/serviceError'</span>);
+
+<span class="cmt">// ── list() ────────────────────────────────────────────────────</span>
+<span class="kw">function</span> <span class="fn">list</span>(user, { section_id, archived }) {
+  <span class="kw">const</span> showArchived = archived === <span class="str">'1'</span> ? <span class="num">1</span> : <span class="num">0</span>;
+
+  <span class="cmt">// Business rule: section_head is ALWAYS restricted to their own section.
+  // Even if they pass ?section_id=1, we override it with their actual section.</span>
+  <span class="kw">const</span> sectionId = user.role === <span class="str">'section_head'</span>
+    ? user.section_id
+    : section_id;
+
+  <span class="kw">return</span> projectRepo.<span class="fn">enrich</span>(projectRepo.<span class="fn">findAll</span>({ sectionId, showArchived }));
+}
+
+<span class="cmt">// ── create() ──────────────────────────────────────────────────</span>
+<span class="kw">function</span> <span class="fn">create</span>(user, body) {
+  <span class="kw">const</span> { title, section_id, responsible_ids, status, future_plan,
+          problems, row_order, progress, due_date } = body;
+
+  <span class="cmt">// Validation: title is required</span>
+  <span class="kw">if</span> (!title?.trim()) <span class="kw">throw new</span> <span class="fn">ServiceError</span>(<span class="num">400</span>, <span class="str">'Title required'</span>);
+
+  <span class="cmt">// section_head always creates in their own section</span>
+  <span class="kw">const</span> sectionId = user.role === <span class="str">'section_head'</span> ? user.section_id : section_id;
+  <span class="kw">if</span> (!sectionId) <span class="kw">throw new</span> <span class="fn">ServiceError</span>(<span class="num">400</span>, <span class="str">'section_id required'</span>);
+
+  <span class="kw">const</span> initialStatus = status || <span class="str">'not_started'</span>;
+
+  <span class="cmt">// Clamp progress to valid range 0-100
+  // Math.min(100, Math.max(0, value)) ensures it can never be &lt;0 or &gt;100</span>
+  <span class="kw">const</span> initialProgress = Math.<span class="fn">min</span>(<span class="num">100</span>, Math.<span class="fn">max</span>(<span class="num">0</span>, Number(progress) || <span class="num">0</span>));
+
+  <span class="kw">const</span> project = projectRepo.<span class="fn">create</span>({
+    title: title.<span class="fn">trim</span>(), sectionId, status: initialStatus,
+    future_plan: future_plan || <span class="str">''</span>, problems: problems || <span class="str">''</span>,
+    row_order, progress: initialProgress, due_date,
+  });
+
+  <span class="cmt">// Audit trail: log the initial status (from null to 'not_started')</span>
+  <span class="fn">recordStatusChange</span>(<span class="str">'project'</span>, project.id, <span class="kw">null</span>, initialStatus, user.id);
+
+  <span class="cmt">// Set responsible people (many-to-many relationship)</span>
+  <span class="kw">if</span> (Array.<span class="fn">isArray</span>(responsible_ids)) {
+    <span class="fn">setResponsibles</span>(<span class="str">'project_responsibles'</span>, <span class="str">'project_id'</span>, project.id, responsible_ids);
+  }
+
+  <span class="cmt">// Return enriched project (with responsibles and custom_values attached)</span>
+  <span class="kw">return</span> projectRepo.<span class="fn">enrich</span>([project])[<span class="num">0</span>];
+}
+
+<span class="cmt">// ── update() ──────────────────────────────────────────────────</span>
+<span class="kw">function</span> <span class="fn">update</span>(user, id, body) {
+  <span class="kw">const</span> project = projectRepo.<span class="fn">findById</span>(id);
+  <span class="kw">if</span> (!project) <span class="kw">throw new</span> <span class="fn">ServiceError</span>(<span class="num">404</span>, <span class="str">'Not found'</span>);
+
+  <span class="cmt">// section_head can only edit their own section's projects</span>
+  <span class="kw">if</span> (user.role === <span class="str">'section_head'</span> && project.section_id !== user.section_id) {
+    <span class="kw">throw new</span> <span class="fn">ServiceError</span>(<span class="num">403</span>, <span class="str">'Forbidden'</span>);
+  }
+
+  <span class="kw">const</span> { title, responsible_ids, status, future_plan, problems,
+          row_order, custom_values, progress, due_date } = body;
+
+  <span class="cmt">// Nullish coalescing: use new value if provided, otherwise keep existing
+  // Note: ?? preserves false, 0, and "" but replaces null/undefined</span>
+  <span class="kw">const</span> newStatus = status ?? project.status;
+  <span class="kw">const</span> newProgress = progress != <span class="kw">null</span>
+    ? Math.<span class="fn">min</span>(<span class="num">100</span>, Math.<span class="fn">max</span>(<span class="num">0</span>, Number(progress)))
+    : (project.progress ?? <span class="num">0</span>);
+
+  <span class="cmt">// undefined means "not sent" (keep existing); null means "clear the value"</span>
+  <span class="kw">const</span> newDueDate = due_date !== <span class="kw">undefined</span>
+    ? (due_date || <span class="kw">null</span>)  <span class="cmt">// empty string → null</span>
+    : project.due_date;
+
+  <span class="kw">const</span> updated = projectRepo.<span class="fn">update</span>(id, {
+    title: title ?? project.title,
+    status: newStatus, future_plan: future_plan ?? project.future_plan,
+    problems: problems ?? project.problems, row_order: row_order ?? project.row_order,
+    progress: newProgress, due_date: newDueDate,
+  });
+
+  <span class="cmt">// Audit trails (only record if something actually changed)</span>
+  <span class="fn">recordStatusChange</span>(<span class="str">'project'</span>, id, project.status, newStatus, user.id);
+  <span class="kw">if</span> (newDueDate !== project.due_date) {
+    <span class="fn">recordFieldChange</span>(<span class="str">'project'</span>, id, <span class="str">'due_date'</span>, project.due_date, newDueDate, user.id);
+  }
+  <span class="kw">if</span> (Array.<span class="fn">isArray</span>(responsible_ids)) {
+    <span class="fn">setResponsibles</span>(<span class="str">'project_responsibles'</span>, <span class="str">'project_id'</span>, id, responsible_ids);
+  }
+  <span class="kw">if</span> (Array.<span class="fn">isArray</span>(custom_values)) projectRepo.<span class="fn">upsertCustomValues</span>(id, custom_values);
+
+  <span class="kw">return</span> projectRepo.<span class="fn">enrich</span>([updated])[<span class="num">0</span>];
+}
+
+<span class="cmt">// ── archive() ─────────────────────────────────────────────────</span>
+<span class="kw">function</span> <span class="fn">archive</span>(user, id, archiveFlag) {
+  <span class="kw">const</span> project = projectRepo.<span class="fn">findById</span>(id);
+  <span class="kw">if</span> (!project) <span class="kw">throw new</span> <span class="fn">ServiceError</span>(<span class="num">404</span>, <span class="str">'Not found'</span>);
+  <span class="kw">if</span> (user.role === <span class="str">'section_head'</span> && project.section_id !== user.section_id) {
+    <span class="kw">throw new</span> <span class="fn">ServiceError</span>(<span class="num">403</span>, <span class="str">'Forbidden'</span>);
+  }
+  <span class="kw">const</span> archive = archiveFlag === <span class="kw">false</span> ? <span class="num">0</span> : <span class="num">1</span>;
+  projectRepo.<span class="fn">setArchived</span>(id, archive);
+  <span class="kw">return</span> { ok: <span class="kw">true</span>, is_archived: archive };
+}
+
+<span class="cmt">// ── softDelete() ──────────────────────────────────────────────</span>
+<span class="kw">function</span> <span class="fn">softDelete</span>(user, id) {
+  <span class="kw">const</span> project = projectRepo.<span class="fn">findById</span>(id);
+  <span class="kw">if</span> (!project) <span class="kw">throw new</span> <span class="fn">ServiceError</span>(<span class="num">404</span>, <span class="str">'Not found'</span>);
+  <span class="kw">if</span> (user.role === <span class="str">'section_head'</span> && project.section_id !== user.section_id) {
+    <span class="kw">throw new</span> <span class="fn">ServiceError</span>(<span class="num">403</span>, <span class="str">'Forbidden'</span>);
+  }
+  <span class="cmt">// Business rule: can only delete within 10 minutes of creation</span>
+  <span class="kw">if</span> (!<span class="fn">isWithinDeletionWindow</span>(project.created_at)) {
+    <span class="kw">throw new</span> <span class="fn">ServiceError</span>(<span class="num">409</span>, <span class="str">'older_than_10_min'</span>);
+  }
+  projectRepo.<span class="fn">softDelete</span>(id);
+  <span class="kw">return</span> { ok: <span class="kw">true</span> };
+}
+
+<span class="cmt">// Simple pass-throughs (no business logic needed)</span>
+<span class="kw">function</span> <span class="fn">getHistory</span>(id) { <span class="kw">return</span> projectRepo.<span class="fn">getHistory</span>(id); }
+<span class="kw">function</span> <span class="fn">getDeadlineChanges</span>() { <span class="kw">return</span> projectRepo.<span class="fn">getDeadlineChanges</span>(); }
+
+module.exports = { list, create, update, archive, softDelete, getHistory, getDeadlineChanges };</code></pre>
+
+  <h2>Key Concepts Demonstrated</h2>
+
+  <h3>Nullish Coalescing (??) vs OR (||)</h3>
+  <pre><code><span class="cmt">// || replaces falsy values: false, 0, "", null, undefined</span>
+title || project.title  <span class="cmt">// if title is "" (empty string), falls back to project.title ← BUG!</span>
+
+<span class="cmt">// ?? replaces ONLY null and undefined</span>
+title ?? project.title  <span class="cmt">// if title is "" (empty string), uses "" ← correct</span></code></pre>
+
+  <h3>The Validation Pattern</h3>
+  <pre><code><span class="cmt">// Guard clauses: throw early, return late
+// Each guard has one job: check one thing and throw if it fails</span>
+<span class="kw">if</span> (!title?.trim()) <span class="kw">throw new</span> <span class="fn">ServiceError</span>(<span class="num">400</span>, <span class="str">'Title required'</span>);
+<span class="kw">if</span> (!sectionId) <span class="kw">throw new</span> <span class="fn">ServiceError</span>(<span class="num">400</span>, <span class="str">'section_id required'</span>);
+<span class="kw">if</span> (!project) <span class="kw">throw new</span> <span class="fn">ServiceError</span>(<span class="num">404</span>, <span class="str">'Not found'</span>);
+<span class="kw">if</span> (wrongRole) <span class="kw">throw new</span> <span class="fn">ServiceError</span>(<span class="num">403</span>, <span class="str">'Forbidden'</span>);
+
+<span class="cmt">// Happy path comes last, after all guards pass</span>
+<span class="kw">return</span> projectRepo.<span class="fn">create</span>(...);</code></pre>
+
+  <h3>The Audit Trail Pattern</h3>
+  <p>Every time a status or important field changes, a record is written to the <code>status_history</code> table. This lets you view the full history of any project.</p>
+  <pre><code><span class="cmt">// Records: "project 5 changed from 'in_progress' to 'completed' by user 3"</span>
+<span class="fn">recordStatusChange</span>(<span class="str">'project'</span>, project.id, oldStatus, newStatus, user.id);
+
+<span class="cmt">// Records: "project 5's due_date changed from '2024-01-01' to '2024-03-01' by user 3"</span>
+<span class="fn">recordFieldChange</span>(<span class="str">'project'</span>, project.id, <span class="str">'due_date'</span>, oldDate, newDate, user.id);</code></pre>
+
+  <h2>HTTP Status Codes Used in ServiceError</h2>
+  <table>
+    <tr><th>Code</th><th>Meaning</th><th>When thrown</th></tr>
+    <tr><td>400</td><td>Bad Request</td><td>Missing required field, invalid data</td></tr>
+    <tr><td>401</td><td>Unauthorized</td><td>Wrong password, expired token</td></tr>
+    <tr><td>403</td><td>Forbidden</td><td>Valid user but wrong role/section</td></tr>
+    <tr><td>404</td><td>Not Found</td><td>The resource doesn't exist</td></tr>
+    <tr><td>409</td><td>Conflict</td><td>Business rule violated (e.g. too old to delete)</td></tr>
+  </table>
+
+  <h2>Services Are Testable Without HTTP</h2>
+  <p>Because services have no HTTP dependencies, you can call them directly in tests:</p>
+  <pre><code><span class="cmt">// A test can just call the service function directly</span>
+<span class="kw">const</span> projectService = <span class="fn">require</span>(<span class="str">'../src/services/projectService'</span>);
+
+test(<span class="str">'section_head cannot update another section project'</span>, () =&gt; {
+  <span class="kw">const</span> user = { id: <span class="num">1</span>, role: <span class="str">'section_head'</span>, section_id: <span class="num">2</span> };
+  expect(() =&gt; projectService.<span class="fn">update</span>(user, <span class="num">5</span>, { title: <span class="str">'...'</span> }))
+    .<span class="fn">toThrow</span>(<span class="str">'Forbidden'</span>);
+});</code></pre>
+
+  <div class="page-nav">
+    <a href="05-routes.html">← Routes Layer</a>
+    <a href="07-repositories.html">Next: Repositories Layer →</a>
+  </div>
+</main>
+</body>
+</html>

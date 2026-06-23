@@ -1,0 +1,388 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Lesson 10 — Complete Walkthrough</title>
+<link rel="stylesheet" href="_shared.css">
+<style>
+  .step { background: #1e293b; border: 1px solid #334155; border-radius: 10px; padding: 24px; margin: 20px 0; position: relative; }
+  .step-num { position: absolute; top: -14px; left: 20px; background: #38bdf8; color: #0f172a; font-size: 0.75rem; font-weight: 800; padding: 3px 12px; border-radius: 999px; letter-spacing: 0.05em; }
+  .step h3 { color: #f1f5f9; margin: 0 0 10px; font-size: 1rem; }
+  .step .file-ref { font-size: 0.78rem; color: #64748b; font-family: monospace; margin-bottom: 12px; }
+  .step pre { margin: 10px 0 0; }
+  .arrow { text-align: center; color: #334155; font-size: 1.5rem; margin: 4px 0; }
+  .scenario { background: linear-gradient(135deg, rgba(56,189,248,0.1), rgba(99,102,241,0.1)); border: 1px solid #334155; border-radius: 12px; padding: 24px; margin: 20px 0; }
+  .scenario h2 { border: none; margin: 0 0 12px; }
+</style>
+</head>
+<body>
+
+<nav>
+  <div class="logo"><a href="index.html">Backend Learning Hub</a><span>IT Project Management</span></div>
+  <div class="section-label">Lessons</div>
+  <a href="01-architecture.html"><span class="num">01</span> Architecture</a>
+  <a href="02-request-lifecycle.html"><span class="num">02</span> Request Lifecycle</a>
+  <a href="03-entry-point.html"><span class="num">03</span> Entry Point</a>
+  <a href="04-middleware.html"><span class="num">04</span> Middleware</a>
+  <a href="05-routes.html"><span class="num">05</span> Routes Layer</a>
+  <a href="06-services.html"><span class="num">06</span> Services Layer</a>
+  <a href="07-repositories.html"><span class="num">07</span> Repositories Layer</a>
+  <a href="08-helpers-utils.html"><span class="num">08</span> Helpers & Utils</a>
+  <a href="09-auth-deep-dive.html"><span class="num">09</span> Auth Deep Dive</a>
+  <a href="10-complete-walkthrough.html" class="active"><span class="num">10</span> Complete Walkthrough</a>
+  <a href="11-database.html"><span class="num">11</span> Database & Schema</a>
+  <a href="12-tests.html"><span class="num">12</span> Testing</a>
+</nav>
+
+<main>
+  <h1>🎯 Complete Walkthrough</h1>
+  <p class="subtitle">Everything comes together here. We'll trace two real requests from first byte to last byte — every function call, every layer, no gaps. By the end you'll be able to read any part of this codebase and know exactly what it does.</p>
+
+  <div class="scenario">
+    <h2>Scenario A: Login</h2>
+    <p><code>POST /api/auth/login</code> with body <code>{ "username": "ali", "password": "secret123" }</code></p>
+    <p>Ali is a section_head for section 2. He has a valid account and the right password.</p>
+  </div>
+
+  <div class="step">
+    <div class="step-num">A1 — Network</div>
+    <h3>Browser sends HTTP request</h3>
+    <pre><code>POST /api/auth/login HTTP/1.1
+Content-Type: application/json
+
+{"username":"ali","password":"secret123"}</code></pre>
+    <p>Node.js receives this on port 3000 and hands it to the Express app.</p>
+  </div>
+
+  <div class="arrow">↓</div>
+
+  <div class="step">
+    <div class="step-num">A2 — app.js</div>
+    <h3>Global middleware runs</h3>
+    <div class="file-ref">src/app.js</div>
+    <pre><code><span class="cmt">// 1. cors() → adds CORS headers to response
+// 2. express.json() → parses the body</span>
+req.body = { username: <span class="str">"ali"</span>, password: <span class="str">"secret123"</span> }
+<span class="cmt">// 3. cookieParser() → parses cookies (none here, first request)
+// 4. Route matching: /api/auth → routes/auth.js</span></code></pre>
+  </div>
+
+  <div class="arrow">↓</div>
+
+  <div class="step">
+    <div class="step-num">A3 — routes/auth.js</div>
+    <h3>Route handler matched: POST /login</h3>
+    <div class="file-ref">src/routes/auth.js</div>
+    <pre><code>router.<span class="fn">post</span>(<span class="str">'/login'</span>, (req, res) =&gt; {
+  <span class="kw">try</span> {
+    <span class="kw">const</span> { token, user } = authService.<span class="fn">login</span>(req.body);
+    <span class="cmt">// ↑ calls the service with { username: "ali", password: "secret123" }</span>
+    ...</code></pre>
+    <p>No <code>requireAuth</code> here — login doesn't need a token! (You need to log in to get one.)</p>
+  </div>
+
+  <div class="arrow">↓</div>
+
+  <div class="step">
+    <div class="step-num">A4 — services/authService.js</div>
+    <h3>Service: validate credentials</h3>
+    <div class="file-ref">src/services/authService.js → login()</div>
+    <pre><code><span class="kw">function</span> <span class="fn">login</span>({ username, password }) {
+  <span class="cmt">// Step 1: look up the user by username</span>
+  <span class="kw">const</span> user = userRepo.<span class="fn">findByUsername</span>(<span class="str">'ali'</span>);
+  <span class="cmt">// → { id: 5, username: 'ali', password_hash: '$2a$10$...', role: 'section_head', section_id: 2, is_active: 1 }
+
+  // Step 2: compare provided password against stored hash</span>
+  bcrypt.<span class="fn">compareSync</span>(<span class="str">'secret123'</span>, user.password_hash)  <span class="cmt">// → true ✓</span>
+
+  <span class="cmt">// Step 3: account is active check</span>
+  user.is_active === <span class="num">1</span>  <span class="cmt">// → true ✓
+
+  // Step 4: create the JWT</span>
+  <span class="kw">const</span> token = jwt.<span class="fn">sign</span>(
+    { id: <span class="num">5</span>, username: <span class="str">'ali'</span>, role: <span class="str">'section_head'</span>, section_id: <span class="num">2</span> },
+    JWT_SECRET,
+    { expiresIn: <span class="str">'8h'</span> }
+  );
+  <span class="cmt">// token = "eyJhbGciOiJIUzI1NiJ9.eyJpZCI6NX0.abc123..."
+
+  // Step 5: return to route handler</span>
+  <span class="kw">return</span> { token, user: { id: <span class="num">5</span>, username: <span class="str">'ali'</span>, role: <span class="str">'section_head'</span>, section_id: <span class="num">2</span> } };
+}</code></pre>
+  </div>
+
+  <div class="arrow">↓</div>
+
+  <div class="step">
+    <div class="step-num">A5 — repositories/userRepository.js</div>
+    <h3>Repository: query the database</h3>
+    <div class="file-ref">userRepository.findByUsername('ali')</div>
+    <pre><code><span class="cmt">// Prepared statement (compiled at startup):</span>
+findByUsername: db.<span class="fn">prepare</span>(<span class="str">'SELECT * FROM users WHERE username = ?'</span>)
+
+<span class="cmt">// At call time:</span>
+stmts.findByUsername.<span class="fn">get</span>(<span class="str">'ali'</span>)
+<span class="cmt">// SQL runs: SELECT * FROM users WHERE username = 'ali'
+// Returns: { id: 5, username: 'ali', password_hash: '$2a$10$...', ... }</span></code></pre>
+  </div>
+
+  <div class="arrow">↓</div>
+
+  <div class="step">
+    <div class="step-num">A6 — routes/auth.js (continued)</div>
+    <h3>Route: set cookie and send response</h3>
+    <div class="file-ref">src/routes/auth.js</div>
+    <pre><code><span class="cmt">// Back in the route handler after service returns:</span>
+res.<span class="fn">cookie</span>(<span class="str">'token'</span>, token, {
+  httpOnly: <span class="kw">true</span>,      <span class="cmt">// JS cannot read this</span>
+  sameSite: <span class="str">'lax'</span>,
+  maxAge: <span class="num">8</span> * <span class="num">60</span> * <span class="num">60</span> * <span class="num">1000</span>
+});
+res.<span class="fn">json</span>({ token, user });</code></pre>
+  </div>
+
+  <div class="arrow">↓</div>
+
+  <div class="step">
+    <div class="step-num">A7 — Network</div>
+    <h3>Browser receives response</h3>
+    <pre><code>HTTP/1.1 200 OK
+Set-Cookie: token=eyJhbGciOiJIUzI1NiJ9...; HttpOnly; SameSite=Lax; Max-Age=28800
+Content-Type: application/json
+
+{"token":"eyJ...","user":{"id":5,"username":"ali","role":"section_head","section_id":2}}</code></pre>
+    <p>The browser stores the cookie. Ali is now logged in. Every subsequent request will include that cookie automatically.</p>
+  </div>
+
+  <hr style="border-color: #1e293b; margin: 48px 0;">
+
+  <div class="scenario">
+    <h2>Scenario B: List Projects</h2>
+    <p><code>GET /api/projects?section_id=2</code> — sent after login, with the cookie in place.</p>
+    <p>Ali (section_head, section 2) wants to see his section's active projects.</p>
+  </div>
+
+  <div class="step">
+    <div class="step-num">B1 — Network</div>
+    <h3>Browser sends HTTP request</h3>
+    <pre><code>GET /api/projects?section_id=2 HTTP/1.1
+Cookie: token=eyJhbGciOiJIUzI1NiJ9...   ← auto-sent by browser</code></pre>
+  </div>
+
+  <div class="arrow">↓</div>
+
+  <div class="step">
+    <div class="step-num">B2 — app.js</div>
+    <h3>Global middleware runs</h3>
+    <pre><code><span class="cmt">// cors() → adds CORS headers
+// express.json() → no body on GET, nothing to parse
+// cookieParser() → parses the Cookie header</span>
+req.cookies = { token: <span class="str">'eyJhbGciOiJIUzI1NiJ9...'</span> }
+<span class="cmt">// Route matching: /api/projects → routes/projects.js</span></code></pre>
+  </div>
+
+  <div class="arrow">↓</div>
+
+  <div class="step">
+    <div class="step-num">B3 — routes/projects.js</div>
+    <h3>Route handler matched: GET /</h3>
+    <div class="file-ref">src/routes/projects.js</div>
+    <pre><code>router.<span class="fn">get</span>(<span class="str">'/'</span>, requireAuth, <span class="fn">wrap</span>(<span class="num">200</span>, req =&gt; projectService.<span class="fn">list</span>(req.user, req.query)));
+<span class="cmt">//        ↑ runs first      ↑ runs if requireAuth calls next()</span></code></pre>
+  </div>
+
+  <div class="arrow">↓</div>
+
+  <div class="step">
+    <div class="step-num">B4 — middleware/auth.js</div>
+    <h3>requireAuth: verify token</h3>
+    <div class="file-ref">src/middleware/auth.js → requireAuth()</div>
+    <pre><code><span class="kw">const</span> token = req.cookies.token;  <span class="cmt">// 'eyJ...'</span>
+
+<span class="cmt">// Verify signature + expiry</span>
+req.user = jwt.<span class="fn">verify</span>(token, JWT_SECRET);
+<span class="cmt">// req.user = { id: 5, username: 'ali', role: 'section_head', section_id: 2, iat: ..., exp: ... }
+
+// Re-check DB: is the account still active?</span>
+checkActive.<span class="fn">get</span>(<span class="num">5</span>)  <span class="cmt">// → { is_active: 1, is_deleted: 0 } ✓</span>
+
+<span class="fn">next</span>();  <span class="cmt">// → proceeds to wrap()</span></code></pre>
+  </div>
+
+  <div class="arrow">↓</div>
+
+  <div class="step">
+    <div class="step-num">B5 — utils/routeUtils.js</div>
+    <h3>wrap() executes the service call</h3>
+    <div class="file-ref">src/utils/routeUtils.js → wrap(200, fn)</div>
+    <pre><code><span class="cmt">// wrap(200, fn) returned a middleware. Now that middleware is called:
+// try { res.status(200).json( fn(req) ) } catch (err) { ... }</span>
+projectService.<span class="fn">list</span>(req.user, req.query)
+<span class="cmt">// req.user = { id:5, role:'section_head', section_id:2 }
+// req.query = { section_id: '2' }</span></code></pre>
+  </div>
+
+  <div class="arrow">↓</div>
+
+  <div class="step">
+    <div class="step-num">B6 — services/projectService.js</div>
+    <h3>Service: apply business rules</h3>
+    <div class="file-ref">src/services/projectService.js → list()</div>
+    <pre><code><span class="kw">function</span> <span class="fn">list</span>(user, { section_id, archived }) {
+  <span class="kw">const</span> showArchived = archived === <span class="str">'1'</span> ? <span class="num">1</span> : <span class="num">0</span>;
+  <span class="cmt">// archived is undefined (not in query string) → showArchived = 0
+
+  // Business rule: section_head is forced to their own section</span>
+  <span class="kw">const</span> sectionId = user.role === <span class="str">'section_head'</span>
+    ? user.section_id   <span class="cmt">// 2 — from the token, not from req.query!</span>
+    : section_id;
+  <span class="cmt">// sectionId = 2
+
+  // Get the raw projects, then enrich them</span>
+  <span class="kw">return</span> projectRepo.<span class="fn">enrich</span>(projectRepo.<span class="fn">findAll</span>({ sectionId: <span class="num">2</span>, showArchived: <span class="num">0</span> }));
+}</code></pre>
+  </div>
+
+  <div class="arrow">↓</div>
+
+  <div class="step">
+    <div class="step-num">B7 — repositories/projectRepository.js</div>
+    <h3>Repository: query 1 — get projects</h3>
+    <div class="file-ref">src/repositories/projectRepository.js → findAll()</div>
+    <pre><code><span class="cmt">// sectionId is provided, so use the section-specific query</span>
+stmts.findBySection.<span class="fn">all</span>(<span class="num">2</span>, <span class="num">0</span>)
+<span class="cmt">// SQL: SELECT * FROM projects WHERE section_id = 2 AND is_archived = 0 AND is_deleted = 0
+// Returns: [
+//   { id: 1, title: 'Network Upgrade', status: 'in_progress', section_id: 2, ... },
+//   { id: 3, title: 'Server Migration', status: 'not_started', section_id: 2, ... },
+// ]</span></code></pre>
+  </div>
+
+  <div class="arrow">↓</div>
+
+  <div class="step">
+    <div class="step-num">B8 — repositories/projectRepository.js</div>
+    <h3>Repository: enrich() — 2 more queries (not N!)</h3>
+    <div class="file-ref">src/repositories/projectRepository.js → enrich()</div>
+    <pre><code><span class="kw">const</span> ids = [<span class="num">1</span>, <span class="num">3</span>];
+
+<span class="cmt">// Query 2: get ALL responsibles for ALL projects in one shot</span>
+db.<span class="fn">prepare</span>(<span class="str">'SELECT pr.project_id, per.id, per.name
+  FROM project_responsibles pr JOIN personnel per ON per.id = pr.personnel_id
+  WHERE pr.project_id IN (?,?)'</span>).<span class="fn">all</span>(<span class="num">1</span>, <span class="num">3</span>)
+<span class="cmt">// → [{ project_id:1, id:4, name:'Sara' }, { project_id:1, id:7, name:'Reza' }]
+
+// Query 3: get ALL custom values for ALL projects in one shot</span>
+db.<span class="fn">prepare</span>(<span class="str">'SELECT cv.project_id, cv.column_id, cv.value, cc.column_name
+  FROM custom_values cv JOIN custom_columns cc ON cc.id = cv.column_id
+  WHERE cv.project_id IN (?,?)'</span>).<span class="fn">all</span>(<span class="num">1</span>, <span class="num">3</span>)
+<span class="cmt">// → [{ project_id:1, column_id:1, value:'High', column_name:'Priority' }]
+
+// Group by project_id using Map, then attach:</span>
+<span class="kw">return</span> [
+  { id: <span class="num">1</span>, title: <span class="str">'Network Upgrade'</span>, ..., responsibles: [{id:<span class="num">4</span>,name:<span class="str">'Sara'</span>},{id:<span class="num">7</span>,name:<span class="str">'Reza'</span>}], custom_values: [{column_id:<span class="num">1</span>,value:<span class="str">'High'</span>}] },
+  { id: <span class="num">3</span>, title: <span class="str">'Server Migration'</span>, ..., responsibles: [], custom_values: [] },
+]</code></pre>
+  </div>
+
+  <div class="arrow">↓</div>
+
+  <div class="step">
+    <div class="step-num">B9 — utils/routeUtils.js</div>
+    <h3>wrap() sends the response</h3>
+    <pre><code><span class="cmt">// fn(req) returned the enriched array
+// wrap() sends it:</span>
+res.<span class="fn">status</span>(<span class="num">200</span>).<span class="fn">json</span>(enrichedProjects);</code></pre>
+  </div>
+
+  <div class="arrow">↓</div>
+
+  <div class="step">
+    <div class="step-num">B10 — Network</div>
+    <h3>Browser receives the response</h3>
+    <pre><code>HTTP/1.1 200 OK
+Content-Type: application/json
+
+[
+  {
+    "id": 1,
+    "title": "Network Upgrade",
+    "status": "in_progress",
+    "section_id": 2,
+    "responsibles": [{"id":4,"name":"Sara"},{"id":7,"name":"Reza"}],
+    "custom_values": [{"column_id":1,"value":"High","column_name":"Priority"}]
+  },
+  {
+    "id": 3,
+    "title": "Server Migration",
+    "status": "not_started",
+    "section_id": 2,
+    "responsibles": [],
+    "custom_values": []
+  }
+]</code></pre>
+  </div>
+
+  <h2>Summary: The Full Call Stack</h2>
+  <div class="diagram">GET /api/projects?section_id=2
+│
+├─ <span class="hl">app.js</span>
+│   cors(), express.json(), cookieParser()
+│   route match → routes/projects.js
+│
+├─ <span class="hl">middleware/auth.js</span>: requireAuth
+│   jwt.verify(token) → req.user = { id:5, role:'section_head', section_id:2 }
+│   DB check: is account active? → yes
+│   next()
+│
+├─ <span class="hl">utils/routeUtils.js</span>: wrap(200, fn)
+│   try { res.status(200).json( fn(req) ) }
+│
+├─ <span class="hl">services/projectService.js</span>: list(user, query)
+│   sectionId = user.section_id = 2  (section_head override)
+│   return projectRepo.enrich(projectRepo.findAll({ sectionId:2, showArchived:0 }))
+│
+├─ <span class="hl">repositories/projectRepository.js</span>: findAll({ sectionId:2, showArchived:0 })
+│   SQL: SELECT * FROM projects WHERE section_id=2 AND is_archived=0 AND is_deleted=0
+│   → raw rows: [{ id:1, ... }, { id:3, ... }]
+│
+├─ <span class="hl">repositories/projectRepository.js</span>: enrich([row1, row2])
+│   SQL: SELECT responsibles WHERE project_id IN (1,3) → 1 query
+│   SQL: SELECT custom_values WHERE project_id IN (1,3) → 1 query
+│   attach to each row
+│   → enriched: [{ id:1, responsibles:[...], custom_values:[...] }, ...]
+│
+└─ <span class="hl">Response</span>: HTTP 200 + JSON array of enriched projects</div>
+
+  <h2>What Would Happen If Ali Tried to See Section 1?</h2>
+  <pre><code><span class="cmt">// Ali (section_head, section 2) requests: GET /api/projects?section_id=1</span>
+
+<span class="cmt">// In projectService.list():</span>
+<span class="kw">const</span> sectionId = user.role === <span class="str">'section_head'</span>
+  ? user.section_id  <span class="cmt">// ← 2, ignoring the query param!</span>
+  : section_id;
+
+<span class="cmt">// He gets section 2's projects regardless of what he passed in the URL.
+// The business rule enforces the restriction.
+// No error is thrown — it just silently overrides his request.</span></code></pre>
+
+  <h2>What Would Happen If the Token Expired?</h2>
+  <pre><code><span class="cmt">// In requireAuth:</span>
+req.user = jwt.<span class="fn">verify</span>(expiredToken, JWT_SECRET);
+<span class="cmt">// jwt.verify() throws: "TokenExpiredError: jwt expired"
+// The catch block runs:</span>
+res.<span class="fn">status</span>(<span class="num">401</span>).<span class="fn">json</span>({ error: <span class="str">'Invalid token'</span> });
+<span class="cmt">// The request stops here. The service and repository never run.</span></code></pre>
+
+  <div class="callout tip"><div class="callout-icon"></div>
+    <p><strong>You've completed the full tour.</strong> You now understand how a request enters the system, passes through middleware, reaches the service, hits the database, and returns a response. Every file in this backend follows the same pattern. Once you understand projects, you understand purchases, tenders, contracts — all of it.</p>
+  </div>
+
+  <div class="page-nav">
+    <a href="09-auth-deep-dive.html">← Auth Deep Dive</a>
+    <a href="index.html">← Back to Home</a>
+  </div>
+</main>
+</body>
+</html>

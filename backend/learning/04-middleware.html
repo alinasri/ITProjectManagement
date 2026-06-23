@@ -1,0 +1,193 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Lesson 04 — Middleware</title>
+<link rel="stylesheet" href="_shared.css">
+</head>
+<body>
+
+<nav>
+  <div class="logo"><a href="index.html">Backend Learning Hub</a><span>IT Project Management</span></div>
+  <div class="section-label">Lessons</div>
+  <a href="01-architecture.html"><span class="num">01</span> Architecture</a>
+  <a href="02-request-lifecycle.html"><span class="num">02</span> Request Lifecycle</a>
+  <a href="03-entry-point.html"><span class="num">03</span> Entry Point</a>
+  <a href="04-middleware.html" class="active"><span class="num">04</span> Middleware</a>
+  <a href="05-routes.html"><span class="num">05</span> Routes Layer</a>
+  <a href="06-services.html"><span class="num">06</span> Services Layer</a>
+  <a href="07-repositories.html"><span class="num">07</span> Repositories Layer</a>
+  <a href="08-helpers-utils.html"><span class="num">08</span> Helpers & Utils</a>
+  <a href="09-auth-deep-dive.html"><span class="num">09</span> Auth Deep Dive</a>
+  <a href="10-complete-walkthrough.html"><span class="num">10</span> Complete Walkthrough</a>
+  <a href="11-database.html"><span class="num">11</span> Database & Schema</a>
+  <a href="12-tests.html"><span class="num">12</span> Testing</a>
+</nav>
+
+<main>
+  <h1>🛡️ Middleware: Auth & Guards</h1>
+  <p class="subtitle">Middleware is one of Express's most powerful concepts. Once you understand it, everything else in the framework clicks. Let's learn what it is, how it works, and then read the actual auth middleware in this project.</p>
+
+  <h2>What Is Middleware?</h2>
+  <p>Middleware is a function that has access to <code>req</code>, <code>res</code>, and a special function called <code>next</code>. It runs <strong>between</strong> the incoming request and your route handler.</p>
+
+  <pre><code><span class="cmt">// This IS middleware — it's just a function with (req, res, next)</span>
+<span class="kw">function</span> <span class="fn">myMiddleware</span>(req, res, next) {
+  console.<span class="fn">log</span>(<span class="str">'A request came in!'</span>);
+  <span class="fn">next</span>();  <span class="cmt">// pass control to the next thing in the chain</span>
+}
+
+app.<span class="fn">use</span>(myMiddleware);  <span class="cmt">// register it — runs on every request</span></code></pre>
+
+  <p>A middleware function must do one of two things:</p>
+  <ul>
+    <li><strong>Call <code>next()</code></strong> — "I'm done, pass this to the next middleware"</li>
+    <li><strong>Send a response</strong> — "I'm stopping this request here" (<code>res.json()</code>, <code>res.status().json()</code>)</li>
+  </ul>
+
+  <div class="callout warn"><div class="callout-icon"></div><p>If a middleware neither calls <code>next()</code> nor sends a response, the request hangs forever. The browser will time out waiting.</p></div>
+
+  <h2>Middleware Chains</h2>
+  <p>You can stack multiple middleware on one route. Express runs them in order, left to right:</p>
+
+  <pre><code>router.<span class="fn">get</span>(<span class="str">'/'</span>, requireAuth, <span class="fn">requireRole</span>(<span class="str">'super_admin'</span>), actualHandler);
+<span class="cmt">//          ↑ runs 1st     ↑ runs 2nd                     ↑ runs 3rd</span></code></pre>
+
+  <div class="diagram">Request arrives
+     │
+     ▼
+┌──────────────┐
+│  requireAuth  │ → token missing? → sends 401, STOPS here
+└──────┬───────┘   token ok?      → sets req.user, calls next()
+       │
+       ▼
+┌──────────────────────┐
+│  requireRole('admin') │ → wrong role? → sends 403, STOPS here
+└──────┬───────────────┘   right role?  → calls next()
+       │
+       ▼
+┌─────────────────┐
+│  route handler  │ → runs the actual logic, sends response
+└─────────────────┘</div>
+
+  <h2>The Auth Middleware File</h2>
+  <p>File: <code>src/middleware/auth.js</code></p>
+
+  <pre><code><span class="kw">const</span> jwt = <span class="fn">require</span>(<span class="str">'jsonwebtoken'</span>);
+<span class="kw">const</span> db = <span class="fn">require</span>(<span class="str">'../db/schema'</span>);
+
+<span class="kw">const</span> JWT_SECRET = process.env.JWT_SECRET || <span class="str">'change-this-secret-in-production'</span>;
+
+<span class="cmt">// Prepared once at module load — fast for every request</span>
+<span class="kw">const</span> checkActive = db.<span class="fn">prepare</span>(<span class="str">'SELECT is_active, is_deleted FROM users WHERE id = ?'</span>);
+
+<span class="cmt">// ── requireAuth ────────────────────────────────────────────────
+// Guards routes that need a logged-in user.
+// Extracts the JWT from cookie or Authorization header,
+// verifies it, checks the DB, then attaches user info to req.</span>
+<span class="kw">function</span> <span class="fn">requireAuth</span>(req, res, next) {
+  <span class="cmt">// Look for token in cookie first, then Authorization header
+  // Authorization header format: "Bearer eyJ..."</span>
+  <span class="kw">const</span> token = req.cookies?.token
+    || req.headers.authorization?.split(<span class="str">' '</span>)[<span class="num">1</span>];
+
+  <span class="kw">if</span> (!token) <span class="kw">return</span> res.<span class="fn">status</span>(<span class="num">401</span>).<span class="fn">json</span>({ error: <span class="str">'Unauthorized'</span> });
+
+  <span class="kw">try</span> {
+    <span class="cmt">// jwt.verify() does two things:
+    // 1. Checks the cryptographic signature (was this issued by us?)
+    // 2. Checks the expiry date (is it still valid?)</span>
+    req.user = jwt.<span class="fn">verify</span>(token, JWT_SECRET);
+    <span class="cmt">// req.user is now: { id, username, role, section_id, iat, exp }</span>
+
+    <span class="cmt">// Extra DB check: what if the account was disabled AFTER the token was issued?
+    // The token could still be valid (not expired) but the account is locked.</span>
+    <span class="kw">const</span> user = checkActive.<span class="fn">get</span>(req.user.id);
+    <span class="kw">if</span> (!user || user.is_active === <span class="num">0</span> || user.is_deleted === <span class="num">1</span>) {
+      <span class="kw">return</span> res.<span class="fn">status</span>(<span class="num">401</span>).<span class="fn">json</span>({ error: <span class="str">'Account disabled'</span> });
+    }
+
+    <span class="fn">next</span>();  <span class="cmt">// token valid + account active → proceed</span>
+  } <span class="kw">catch</span> {
+    <span class="cmt">// jwt.verify() throws if signature is wrong or token is expired</span>
+    res.<span class="fn">status</span>(<span class="num">401</span>).<span class="fn">json</span>({ error: <span class="str">'Invalid token'</span> });
+  }
+}
+
+<span class="cmt">// ── requireRole ────────────────────────────────────────────────
+// A "higher-order function" — takes role names and RETURNS middleware.
+// Must be used after requireAuth (which sets req.user).</span>
+<span class="kw">function</span> <span class="fn">requireRole</span>(...roles) {
+  <span class="kw">return</span> (req, res, next) =&gt; {
+    <span class="kw">if</span> (!roles.<span class="fn">includes</span>(req.user?.role)) {
+      <span class="kw">return</span> res.<span class="fn">status</span>(<span class="num">403</span>).<span class="fn">json</span>({ error: <span class="str">'Forbidden'</span> });
+    }
+    <span class="fn">next</span>();
+  };
+}
+
+module.exports = { requireAuth, requireRole, JWT_SECRET };</code></pre>
+
+  <h2>Understanding requireRole — A Higher-Order Function</h2>
+  <p>Notice that <code>requireRole</code> is <strong>called</strong> in the route definition, not just referenced:</p>
+  <pre><code><span class="cmt">// requireAuth is passed as a reference (no parentheses)</span>
+router.<span class="fn">get</span>(<span class="str">'/'</span>, requireAuth, ...);
+
+<span class="cmt">// requireRole('super_admin') is CALLED — it returns a new function</span>
+router.<span class="fn">get</span>(<span class="str">'/'</span>, requireAuth, <span class="fn">requireRole</span>(<span class="str">'super_admin'</span>), ...);</code></pre>
+  <p>This pattern is called a <strong>higher-order function</strong>: a function that returns another function. It lets you pass arguments (the allowed roles) to a middleware factory and get back a configured middleware.</p>
+
+  <pre><code><span class="cmt">// What requireRole('super_admin', 'section_head') actually does:</span>
+<span class="kw">const</span> roleMiddleware = <span class="fn">requireRole</span>(<span class="str">'super_admin'</span>, <span class="str">'section_head'</span>);
+<span class="cmt">// roleMiddleware is now:  (req, res, next) => { ... checks ['super_admin','section_head'] ... }</span>
+
+<span class="cmt">// These two lines are equivalent:</span>
+router.<span class="fn">post</span>(<span class="str">'/'</span>, requireAuth, <span class="fn">requireRole</span>(<span class="str">'super_admin'</span>, <span class="str">'section_head'</span>), handler);
+router.<span class="fn">post</span>(<span class="str">'/'</span>, requireAuth, roleMiddleware, handler);</code></pre>
+
+  <h2>The Six Roles in This System</h2>
+  <table>
+    <tr><th>Role</th><th>Access level</th></tr>
+    <tr><td>super_admin</td><td>Full access to everything, all sections</td></tr>
+    <tr><td>it_head</td><td>Read access to all sections, sees reports and dashboards</td></tr>
+    <tr><td>section_head</td><td>Full CRUD within their own section only</td></tr>
+    <tr><td>purchase_admin</td><td>Manages purchase orders</td></tr>
+    <tr><td>tender_admin</td><td>Manages tender processes</td></tr>
+    <tr><td>contract_admin</td><td>Manages contracts</td></tr>
+  </table>
+
+  <h2>Where Does req.user Come From?</h2>
+  <p>When a user logs in, the server creates a JWT (a signed token) containing their user data:</p>
+  <pre><code><span class="cmt">// Created at login (authService.js):</span>
+<span class="kw">const</span> token = jwt.<span class="fn">sign</span>(
+  { id: <span class="num">5</span>, username: <span class="str">'ali'</span>, role: <span class="str">'section_head'</span>, section_id: <span class="num">2</span> },
+  JWT_SECRET,
+  { expiresIn: <span class="str">'8h'</span> }
+);
+
+<span class="cmt">// On the next request, requireAuth decodes it:
+// req.user = { id: 5, username: 'ali', role: 'section_head', section_id: 2, iat: ..., exp: ... }</span></code></pre>
+  <p>After <code>requireAuth</code> runs, <code>req.user</code> is available in every middleware and route handler that comes after it in the chain.</p>
+
+  <h2>Optional Chaining (?.) Explained</h2>
+  <pre><code>req.cookies?.token
+<span class="cmt">// Same as: req.cookies ? req.cookies.token : undefined
+// Safe — doesn't throw if req.cookies is null or undefined</span>
+
+req.headers.authorization?.split(<span class="str">' '</span>)[<span class="num">1</span>]
+<span class="cmt">// Safe — doesn't throw if authorization header is missing</span></code></pre>
+
+  <h2>Security: Why Check the DB Every Request?</h2>
+  <p>JWT tokens are valid until they expire (8 hours). If an admin disables a user's account, the user still has a valid token. Without the DB check, they could keep making requests for up to 8 hours after being disabled.</p>
+  <p>The extra <code>checkActive</code> query adds a tiny overhead but ensures that account disabling takes effect <strong>immediately</strong>.</p>
+
+  <div class="callout key"><div class="callout-icon"></div><p><strong>The prepared statement <code>checkActive</code> is compiled once at module load</strong>, not on every request. SQLite stores the compiled query plan and just substitutes the user ID each time. This makes it very fast.</p></div>
+
+  <div class="page-nav">
+    <a href="03-entry-point.html">← Entry Point</a>
+    <a href="05-routes.html">Next: Routes Layer →</a>
+  </div>
+</main>
+</body>
+</html>
